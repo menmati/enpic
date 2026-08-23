@@ -1,0 +1,52 @@
+---
+title: "Escaneo Previo"
+author: "Carmen Macías Portillo"
+date: "`r Sys.Date()`"
+output: 
+  prettydoc::html_pretty:
+    theme: tactile
+    toc: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+```{r}
+# Cargamos la librería 'haven', necesaria para cargar archivos .sav (SPSS)
+library(haven)
+# Cargamos el archivo .sav
+enpic <- read_sav("ENPIC_BMI_525.sav")
+```
+
+```{r}
+# Vemos las primeras filas de datos
+head(enpic)
+```
+
+```{r}
+# Cargamos la librería 'dplyr'
+library(dplyr)
+# Vemos los tipos de columnas que hay en la base de datos
+glimpse(enpic)
+```
+
+```{r}
+# Vemos datos faltantes
+summary(enpic)
+```
+```{r}
+# Cargamos la librería 'tidyr'
+library(tidyr)
+# Contamos cuántos valores nulos (NA) hay en cada columna
+enpic %>%
+  summarise_all(~ sum(is.na(.))) %>%
+  pivot_longer(everything(), names_to = "Variable", values_to = "Nulos") %>%
+  arrange(desc(Nulos)) %>%
+  print(n = 20)
+```
+
+```{r}
+purrr::map(enpic, ~attr(.x, "labels"))
+```
+
