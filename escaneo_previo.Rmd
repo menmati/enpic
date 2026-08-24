@@ -35,18 +35,60 @@ glimpse(enpic)
 # Vemos datos faltantes
 summary(enpic)
 ```
+
 ```{r}
-# Cargamos la librería 'tidyr'
+# Cargamos la librería 'tidyr' y la librería necesaria para una tabla interactiva
 library(tidyr)
-# Contamos cuántos valores nulos (NA) hay en cada columna
-enpic %>%
-  summarise_all(~ sum(is.na(.))) %>%
-  pivot_longer(everything(), names_to = "Variable", values_to = "Nulos") %>%
-  arrange(desc(Nulos)) %>%
-  print(n = 20)
-```
+library(DT)
 
-```{r}
-purrr::map(enpic, ~attr(.x, "labels"))
-```
+# Extramos las etiquetas antes de modificar la base de datos, así evitamos que la conversión a factor borre los metadatos de SPSS
+Etiquetas <- sapply(enpic, function(x) {
+  lbls <- attr(x, "labels")
+  if (!is.null(lbls)) {
+    # Si tiene etiquetas, las pegamos en formato "1 = Hombre; 2 = Mujer"
+    paste(unname(lbls), names(lbls), sep = " = ", collapse = "; ")
+  } else {
+    "Sin etiquetas"
+  }
+})
 
+# Contamos los nulos manteniendo el orden original de las columnas
+Valores_Nulos <- sapply(enpic, function(x) sum(is.na(x)))
+
+# Bucle para revisar cada columna de la base de datos y convertir en factor
+columnas_extra <- c("DIAGNOSP", "SUPRE_NE", "INDICA_NTP", "SUPRE_NPT")
+for (columna in names(enpic)) {
+  # Contar cuántos valores únicos tiene la columna actual (ignorando los NA)
+  num_unicos <- length(unique(na.omit(enpic[[columna]])))
+  # Si tiene 5 o menos, convertir en factor. Añadimos la condición OR para que también incluya las columnas extra
+  if (num_unicos <= 5 || columna %in% columnas_extra) {
+    enpic[[columna]] <- as.factor(enpic[[columna]])
+  }
+}
+
+# Creamos el resto de las columnas para la tabla
+Variable = names(enpic)
+Tipo_dato = sapply(enpic, function(x) class(x)[1])
+Valores_Unicos = sapply(enpic, function(x) length(unique(na.omit(x))))
+
+Tipo_Distribucion <- sapply(enpic, function(x) {
+  # Solo hacemos el test si la variable es numérica y tiene suficientes datos
+  if(is.numeric(x) &&  length(unique(na.omit(x))) > 5) {
+    # Quitamos los vacíos para que no falle el test
+    x_limpio <- na.omit(x)
+    # Calculamos el p-valor del test de Kolmogorov-Smirnov (suprimimos advertencias por empates)
+    p_valor <- suppressWarnings(ks.test(x_limpio, "pnorm", mean(x_limpio), sd(x_limpio))$p.value)
+    # Si el p-valor es mayor a 0.05, asumimos normalidad
+    if (p_valor > 0.05) {return("Distribución Normal")}
+    else {return("Distribución Asimétrica")}
+  } else {
+    return("No aplicable")
+  }
+})
+
+# Unimos todo en un data.frame
+tabla_resumen <- data.frame(Variable, Tipo_dato, Etiquetas, Valores_Unicos, Valores_Nulos, Tipo_Distribucion, row.names = NULL)
+
+# Mostrar la tabla interactiva
+datatable(tabla_resumen, options = list(scrollY = "500px", paging = FALSE))
+```
