@@ -1,5 +1,5 @@
 ---
-title: "Indicador 1"
+title: "Indicador 2"
 author: "Carmen Macías Portillo"
 date: "`r Sys.Date()`"
 output: 
@@ -22,61 +22,55 @@ enpic <- read_sav("ENPIC_BMI_525.sav")
 ```{r}
 library(dplyr)
 
-# Paso 1: Filtrar la población (Denominador)
-# Utilizamos la variable 'DIASUCI' para filtrar a los pacientes con estancia > 5 días
-poblacion_UCI_48h <- enpic %>% filter(DIASUCI > 5)
-
-# Paso 2: Calcular el indicador y sus componentes directamente
-indicador_1 <- poblacion_UCI_48h %>%
+# Paso 1 y 2: Calcular el indicador y sus componentes directamente
+indicador_2 <- enpic %>%
   summarise(
-    Total_Pacientes_Denominador = n(),
-    Pacientes_Con_Valoracion = sum(!is.na(NUTRIC_Score)),
-    # Aplicamos la fórmula del Indicador 1
-    Porcentaje_Cumplimiento = (Pacientes_Con_Valoracion / Total_Pacientes_Denominador) * 100
+    Total_Pacientes_RN = n(),
+    Pacientes_Con_EN = sum(!is.na(VGSING2) | (!is.na(BMI) & !is.na(CONUT_Score))),
+    # Aplicamos la fórmula del Indicador 2
+    Porcentaje_Cumplimiento = (Pacientes_Con_EN / Total_Pacientes_RN) * 100
   )
 
 # Paso 3: Extraer variables para el cálculo estadístico
-n_cumplen <- indicador_1$Pacientes_Con_Valoracion
-n_total <- indicador_1$Total_Pacientes_Denominador
-iq1_porcentaje <- round(indicador_1$Porcentaje_Cumplimiento, 2)
+n_cumplen <- indicador_2$Pacientes_Con_EN
+n_total <- indicador_2$Total_Pacientes_RN
+iq2_porcentaje <- round(indicador_2$Porcentaje_Cumplimiento, 2)
 
 # Prueba binomial para los intervalos de confianza
-test_IQ1 <- binom.test(x = n_cumplen, n = n_total)
-lim_inf <- round(test_IQ1$conf.int[1] * 100, 2)
-lim_sup <- round(test_IQ1$conf.int[2] * 100, 2)
+test_IQ2 <- binom.test(x = n_cumplen, n = n_total)
+lim_inf <- round(test_IQ2$conf.int[1] * 100, 2)
+lim_sup <- round(test_IQ2$conf.int[2] * 100, 2)
 
 # Paso 4: Mostrar resultados formateados
 cat(
-  "--- RESULTADOS INDICADOR 1 ---\n",
-  "Pacientes en UCI > 5 días (Total):", n_total, "\n",
-  "Pacientes con Valoración (Cumplen):", n_cumplen, "\n",
-  "Cumplimiento IQ1:", iq1_porcentaje, "%\n",
+  "--- RESULTADOS INDICADOR 2 ---\n",
+  "Pacientes en Riesgo Nutricional (Total):", n_total, "\n",
+  "Pacientes con Valoración EN (Cumplen):", n_cumplen, "\n",
+  "Cumplimiento IQ2:", iq2_porcentaje, "%\n",
   "Intervalo de Confianza (95%): [", lim_inf, "% -", lim_sup, "% ]\n"
 )
 ```
 
 ```{r}
-# Cargamos la librería ggplot2
+# Cargamos la librería 'ggplot2'
 library(ggplot2)
-
-# Generamos el gráfico dinámicamente con barras de error
-poblacion_UCI_48h %>%
-  # Clasificamos a cada paciente según si tiene o no NUTRIC_Score
+# Generamos el gráfico dinámicamente a partir de la cohorte total
+enpic %>%
+  # Clasificamos a cada paciente según si cumple los criterios de valoración EN
   mutate(
     Estado_Valoracion = if_else(
-      !is.na(NUTRIC_Score),
-      "Con valoración (Cumplen)",
-      "Sin valoración (No cumplen)"
+      !is.na(VGSING2) | (!is.na(BMI) & !is.na(CONUT_Score)),
+      "Con valoración EN (Cumplen)",
+      "Sin valoración EN (No cumplen)"
     )
   ) %>%
   # Contamos cuántos pacientes hay en cada grupo (la 'n')
   count(Estado_Valoracion) %>%
-  # Calculamos Proporción, Porcentaje e Intervalos de Confianza (95%)
+  # Calculamos el porcentaje y preparamos la etiqueta bonita con n y %
   mutate(
     Proporcion = n / sum(n),
     Porcentaje = round((n / sum(n)) * 100, 1),
     Texto_Etiqueta = paste0("n = ", n, " (", Porcentaje, "%)"),
-    
     # Cálculo del Error Estándar (SE) y límites del IC aplicando la fórmula de Wald
     SE = sqrt((Proporcion * (1 - Proporcion)) / sum(n)),
     Lim_Inf = (Proporcion - 1.96 * SE) * 100,
@@ -88,17 +82,15 @@ poblacion_UCI_48h %>%
   geom_col(width = 0.5) +
   # Añadimos las barras de error basadas en nuestros límites
   geom_errorbar(aes(ymin = Lim_Inf, ymax = Lim_Sup), width = 0.15, size = 0.7, color = "#424242") +
-  # Ajustamos vjust para que el texto no pise la barra de error
   geom_text(aes(label = Texto_Etiqueta), vjust = -2.5, size = 4.5, fontface = "bold") +
-  scale_fill_manual(values = c("Con valoración (Cumplen)" = "#4CAF50", "Sin valoración (No cumplen)" = "#E53935")) +
+  scale_fill_manual(values = c("Con valoración EN (Cumplen)" = "#4CAF50", "Sin valoración EN (No cumplen)" = "#E53935")) +
   theme_minimal() +
   labs(
-    title = "Indicador 1: Identificación de Riesgo Nutricional",
-    subtitle = "Cumplimiento basado en NUTRIC Score (con Intervalo de Confianza al 95%)",
+    title = "Indicador 2: Valoración del Estado Nutricional (EN)",
+    subtitle = "Cumplimiento (con Intervalo de Confianza al 95%)",
     x = NULL,
     y = "Porcentaje de pacientes (%)"
   ) +
-  # Ampliamos el límite Y para que la barra de error y el texto quepan perfectamente
   ylim(0, 125) +
   theme(
     legend.position = "none", 
@@ -106,3 +98,4 @@ poblacion_UCI_48h %>%
     axis.text.x = element_text(size = 11)
   )
 ```
+
