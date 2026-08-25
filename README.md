@@ -1,16 +1,48 @@
-# 📊 Proyecto ENPIC: Evaluación de Indicadores de Calidad
+# 📊 Proyecto ENPIC: Evaluación y Análisis de Indicadores de Calidad en UCI
 
-> *Este repositorio contiene el código en R utilizado para la limpieza, manipulación y evaluación de una serie de Indicadores de Calidad clínicos y nutricionales a partir de la "Base de datos ENPIC".*
+> *Repositorio oficial para el almacenamiento, procesamiento analítico y evaluación de indicadores de calidad asistencial y nutricional en pacientes críticos a partir de la "Base de datos ENPIC".*
 
 ---
 
-## 🛠️ Exploración y Tratamiento Inicial de Datos
+## 📂 Estructura y Descripción de Archivos del Proyecto
 
-En la primera fase del proyecto, se estableció el entorno de trabajo y se generó un diagnóstico algorítmico y completo de la estructura de la base de datos:
+El flujo de trabajo analítico y de control de calidad se encuentra modularizado en los siguientes scripts desarrollados en R Markdown:
 
-*   **Importación y metadatos:** Se cargó la "Base de datos ENPIC" desde su formato original (`.sav`) utilizando el paquete `haven`. Para evitar la pérdida de contexto, se extrajeron las etiquetas nativas de SPSS (ej. `1 = Hombre; 2 = Mujer`) para construir un diccionario automatizado antes de cualquier coerción de datos.
-*   **Auditoría de Valores Nulos:** Se iteró sobre la base de datos para contabilizar el número exacto de valores perdidos (`NA`) por columna, preservando el orden original para facilitar la inspección.
-*   **Transformación Inteligente a Factores:** Se diseñó un bucle para convertir automáticamente a formato `factor` las variables categóricas (identificadas por tener $\le 5$ valores únicos), incluyendo excepciones clínicas específicas que requerían ser tratadas como categorías (`DIAGNOSP`, `SUPRE_NE`, `INDICA_NTP`, `SUPRE_NPT`).
-*   **Análisis de Distribución:** Se integró un test de Kolmogorov-Smirnov (`ks.test`) para evaluar dinámicamente la normalidad de las variables numéricas continuas, clasificándolas en distribuciones "Normales" o "Asimétricas".
-*   **Tabla Resumen Interactiva:** Todos los hallazgos (Nombre de la variable, Tipo de dato, Etiquetas, Valores Únicos, Nulos y Tipo de Distribución) se consolidaron y presentaron mediante una tabla interactiva utilizando la librería `DT`.
+### 1. `escaneo_previo.Rmd` — Diagnóstico Estructural y Auditoría de Datos
+Este archivo ejecuta la toma de contacto inicial con el conjunto de datos clínicos. Su propósito fundamental es asegurar la integridad de la información, auditar los datos faltantes y estructurar un diccionario de metadatos automatizado previo a cualquier fase inferencial.
 
+*   **Librerías principales:** `haven` (importación de SPSS), `dplyr` (manipulación de datos), `tidyr` (reestructuración tabular) y `DT` (generación de tablas interactivas).
+*   **Funciones clave:** 
+    *   `read_sav()` para la importación segura preservando las etiquetas nativas del formato `.sav`.
+    *   Iteraciones mediante funciones anónimas (`sapply()` y `attr(x, "labels")`) para rescatar los diccionarios de códigos categóricos originales.
+    *   `ks.test()` (Test de Kolmogorov-Smirnov) para la evaluación algorítmica de la normalidad en variables continuas.
+    *   `datatable()` para la renderización de un diccionario de datos dinámico.
+
+### 2. `indicador1.Rmd` — Evaluación del Indicador 1: Identificación de Enfermos en Riesgo Nutricional (RN)
+Este script implementa los criterios metodológicos del primer indicador de calidad, cuyo objetivo es cuantificar el porcentaje de pacientes ingresados en UCI con estancias prolongadas que cuentan con una valoración del riesgo nutricional registrada.
+
+*   **Librerías principales:** `dplyr` (filtrado y sumarización) y `ggplot2` (visualización de datos).
+*   **Funciones clave:**
+    *   `filter()` y `summarise()` para la selección de la población del denominador (pacientes con estancias superiores a 5 días) y el cálculo de proporciones de cumplimiento basadas en la escala `NUTRIC_Score`.
+    *   `ggplot()` combinada con `geom_col()` y `geom_text()` para la representación gráfica automatizada y dinámica de los resultados.
+
+---
+
+## 📈 Informe Analítico e Interpretativo: Indicador 1
+
+> *Nota metodológica: El análisis estadístico en entornos clínicos complejos busca identificar tendencias y grados de adhesión a los protocolos asistenciales más que emitir juicios categóricos deterministas.*
+
+La evaluación del **Indicador 1 (Identificación de Enfermos en Riesgo Nutricional)** sobre la cohorte analizada arroja un **97.3% de cumplimiento** en la identificación mediante el uso del *NUTRIC Score* en pacientes con estancias prolongadas en la Unidad de Cuidados Intensivos. 
+
+### Consideraciones Analíticas y Justificación de la Muestra
+*   **Alto grado de adherencia:** Los datos sugieren una sólida implantación de los protocolos de cribado nutricional al ingreso en la práctica clínica habitual de la UCI, situándose muy próximos al estándar de excelencia teóricamente deseable (100%).
+*   **Limitaciones para inferencias avanzadas:** El análisis descriptivo revela que únicamente 16 pacientes no cumplieron con el registro del indicador. Desde una perspectiva metodológica y estadística, tamaños de muestra tan reducidos en los grupos de no cumplimiento restan potencia a las pruebas de contraste de hipótesis. 
+*   **Implicaciones:** Los datos disponibles inducen a pensar que cualquier intento de modelización estadística multivariante o estratificación analítica sobre este subgrupo carecería de la estabilidad y robustez necesarias para extraer conclusiones generalizables. Por consiguiente, se opta por una aproximación descriptiva y gráfica directa, evitando sobreinterpretar variaciones marginales en una muestra de incumplimiento tan acotada.
+
+---
+
+## 🛠️ Especificaciones Técnicas del Entorno
+
+*   **Lenguaje:** R (versión recomendada $\ge$ 4.0).
+*   **Entorno de renderizado:** R Markdown (`.Rmd`) exportado mediante `rmarkdown::render()` o directamente desde RStudio.
+*   **Control de versiones:** Git / GitHub (con exclusión explícita de ficheros de datos primarios sensibles mediante `.gitignore`).

@@ -1,0 +1,85 @@
+---
+title: "Indicador 1"
+author: "Carmen Macías Portillo"
+date: "`r Sys.Date()`"
+output: 
+  prettydoc::html_pretty:
+    theme: tactile
+    toc: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+```{r}
+# Cargamos la librería 'haven', necesaria para cargar archivos .sav (SPSS)
+library(haven)
+# Cargamos el archivo .sav
+enpic <- read_sav("ENPIC_BMI_525.sav")
+```
+
+```{r}
+library(dplyr)
+
+# Paso 1: Filtrar la población (Denominador)
+# Aunque se informó de que la base de datos estaba construida solo con pacientes que habían superado los dos días en UCI, utilizamos la variable 'DIASUCI' para filtrar por si hubiera algún error en la base de datos
+poblacion_UCI_48h <- enpic %>% filter(DIASUCI > 5)
+
+# Paso 2: Calculamos el indicador
+# Solo utilizaremos las valoraciones mencionadas en el Indicador 1. Sin embargo, la base de datos no posee una variable relativa a la escala NRS2002, por lo que solo veremos si se realizó la valoración NUTRIC Score
+indicador_1 <- poblacion_UCI_48h %>%
+  summarise(
+    Total_Pacientes_Denominador = n(),
+    # Si el valor es NA (Nulo), se considerará como no realizada, mientras que si tiene valor (cualquiera), se contará como realizada
+    Pacientes_Con_Valoracion = sum(!is.na(NUTRIC_Score)),
+    # Aplicamos la fórmula del indicador de calidad 1
+    Porcentaje_Cumplimiento_IQ1 = (Pacientes_Con_Valoracion / Total_Pacientes_Denominador) * 100
+  )
+
+# Paso 3: Mostramos el resultado
+print(indicador_1)
+```
+
+```{r}
+# Cargamos la librería ggplot2
+library(ggplot2)
+
+# Partimos de la población filtrada que ya habías calculado
+poblacion_UCI_48h %>%
+  # Clasificamos a cada paciente según si tiene o no NUTRIC_Score
+  mutate(
+    Estado_Valoracion = if_else(
+      !is.na(NUTRIC_Score),
+      "Con valoración (Cumplen)",
+      "Sin valoración (No cumplen)"
+    )
+  ) %>%
+  # Contamos cuántos pacientes hay en cada grupo
+  count(Estado_Valoracion) %>%
+  # Calculamos el porcentaje y preparamos una etiqueta bonita con la n y el %
+  mutate(
+    Porcentaje = round((n / sum(n)) * 100, 1),
+    # Creamos un texto que combine la n y el porcentaje
+    Texto_Etiqueta = paste0("n = ", n, " (", Porcentaje, "%)")
+  ) %>%
+  # Pasamos los datos calculados a ggplot
+  ggplot(aes(x = Estado_Valoracion, y = Porcentaje, fill = Estado_Valoracion)) +
+  geom_col(width = 0.5) +
+  # Usamos nuestra nueva variable de texto en las etiquetas del gráfico
+  geom_text(aes(label = Texto_Etiqueta), vjust = -0.8, size = 4.5, fontface = "bold") +
+  scale_fill_manual(values = c("Con valoración (Cumplen)" = "#4CAF50", "Sin valoración (No cumplen)" = "#E53935")) +
+  theme_minimal() +
+  labs(
+    title = "Indicador 1: Identificación de Riesgo Nutricional",
+    subtitle = "Cumplimiento basado en NUTRIC Score (Pacientes estancia > 5 días)",
+    x = NULL,
+    y = "Porcentaje de pacientes (%)"
+  ) +
+  ylim(0, 115) +
+  theme(
+    legend.position = "none", 
+    plot.title = element_text(face = "bold", size = 14),
+    axis.text.x = element_text(size = 11)
+  )
+```
