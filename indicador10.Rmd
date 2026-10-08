@@ -1,0 +1,219 @@
+---
+title: "Indicador 10: Monitorización de la Aparición de Nutritrauma en Pacientes con TMN"
+author: "Carmen Macías Portillo"
+date: "`r Sys.Date()`"
+output: 
+  prettydoc::html_pretty:
+    theme: tactile
+    toc: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+```{r}
+# Cargamos la librería 'haven', necesaria para cargar archivos .sav (SPSS)
+library(haven)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+# Cargamos el archivo .sav
+enpic <- read_sav("ENPIC_BMI_525.sav")
+```
+
+## **Indicador de Calidad 10** (**IQ10**): Monitorización de la aparición de nutritrauma en pacientes con tratamiento médico nutricional
+
+El IQ10 evalúa la correcta monitorización de la aparición de nutritrauma en pacientes que reciben tratamiento médico nutricional (TMN). Se trata de un indicador de proceso y seguridad especialmente exigente, cuyo objetivo es comprobar que el seguimiento metabólico del soporte nutricional queda documentado de forma completa en distintos planos: evaluación de aportes nutricionales, control del balance hídrico, vigilancia de alteraciones hidroelectrolíticas y monitorización de toxicidad hepato-lipídica.
+
+En la base ENPIC, este indicador se ha operativizado como una auditoría documental de los componentes disponibles en el registro. Por tanto, el resultado debe interpretarse como una medida de trazabilidad del seguimiento metabólico del TMN en la base de datos, y no necesariamente como una medición directa de toda la vigilancia clínica realizada a pie de cama.
+
+Para evaluar la monitorización del nutritrauma, el indicador se ha operativizado bajo los siguientes criterios técnicos:
+
+- **Población diana** ($N$): Pacientes con tratamiento médico nutricional durante al menos 7 días completos (`TOTAL_DIAS_SN >= 7`). Esta restricción del denominador constituye una adaptación metodológica necesaria, ya que varios de los componentes evaluados —especialmente los triglicéridos y el perfil hepático semanal— solo son exigibles en pacientes que mantienen el TMN durante un periodo suficiente para poder ser monitorizados semanalmente. De este modo, se evita clasificar como incumplimiento la ausencia de controles que no eran temporalmente aplicables.
+
+- **Casos favorables** ($n$): El numerador se definió como el número de pacientes con registro completo en todos los bloques de monitorización evaluables en la base ENPIC. Estos bloques fueron: evaluación de aportes nutricionales durante los primeros siete días (`PESOACT`, `CALORIA1` a `CALORIA7`, `PROT1` a `PROT7`), monitorización del balance hídrico mediante diuresis registrada en los cortes disponibles (`ORUR24H1`, `ORUR24H3`, `ORUR24H7`), monitorización hidroelectrolítica seriada (`POTASIO1`, `POTASIO3`, `POTASIO7`, `SODIO1`, `SODIO3`, `SODIO7`, `MAGNESIO1`, `MAGNESIO3`, `MAGNESIO7`, `FOSFORO1`, `FOSFORO3`, `FOSFORO7`) y monitorización hepato-lipídica semanal (`TRIGLI7`, `FILIRUB7`, `GOT7`, `GPT7`, `FALCALI7`).
+
+Dado que la base ENPIC no dispone de variables específicas de glucemia seriada, este componente del indicador original no pudo ser incorporado al algoritmo automatizado. Por ello, el IQ10 debe interpretarse como una aproximación parcial al indicador completo, limitada a los dominios de monitorización metabólica disponibles en la base de datos. Asimismo, aunque el indicador original contempla monitorización diaria del balance hídrico y de los electrolitos, la estructura de ENPIC permite auditar estos dominios únicamente en los cortes seriados disponibles —días 1, 3 y 7—.
+
+El cumplimiento del indicador se definió mediante una regla estricta de cumplimiento integral o “todo o nada”. Para que un paciente fuera considerado correctamente monitorizado, debía presentar información completa en todos los bloques evaluados. La ausencia de un único dato en cualquiera de estos componentes fue suficiente para clasificar el caso como no cumplidor del indicador.
+
+La proporción de cumplimiento se calculó como el cociente entre pacientes con monitorización completa del nutritrauma y pacientes con TMN durante al menos 7 días.
+
+$$IQ10 = \left( \frac{\text{Nº de pacientes con TMN correctamente monitorizados para nutritrauma}}{\text{Nº de pacientes con TMN durante al menos 7 días}} \right) \times 100$$
+
+Para cuantificar la precisión de la estimación se calculó el intervalo de confianza binomial al 95%.
+
+```{r}
+library(dplyr); library(ggplot2); library(knitr)
+
+# 1. Definir denominador
+# Adaptación operativa: pacientes con TMN durante al menos 7 días completos, dado que varios componentes del indicador son de periodicidad semanal
+pacientes_TMN_7d <- enpic %>% filter(TOTAL_DIAS_SN >= 7)
+Denominador_IQ10 <- nrow(pacientes_TMN_7d)
+
+# 2. Definir bloques de monitorización disponibles en ENPIC
+# Bloque A: Evaluación de aportes nutricionales y peso
+cols_aportes <- c("PESOACT", "CALORIA1", "CALORIA2", "CALORIA3", "CALORIA4", "CALORIA5", "CALORIA6", "CALORIA7", "PROT1", "PROT2", "PROT3", "PROT4", "PROT5", "PROT6", "PROT7")
+
+# Bloque B: Balance hídrico en cortes disponibles
+cols_hidrico <- c("ORUR24H1", "ORUR24H3", "ORUR24H7")
+
+# Bloque C: Electrolitos seriados en cortes disponibles
+cols_iones <- c("POTASIO1", "POTASIO3", "POTASIO7", "SODIO1", "SODIO3", "SODIO7", "MAGNESIO1", "MAGNESIO3", "MAGNESIO7", "FOSFORO1", "FOSFORO3", "FOSFORO7")
+
+# Bloque D: Toxicidad hepato-lipídica semanal
+cols_tox_semanal <- c("TRIGLI7", "FILIRUB7", "GOT7", "GPT7", "FALCALI7")
+
+# 3. Comprobar disponibilidad de variables antes del cálculo
+vars_iq10 <- c(cols_aportes, cols_hidrico, cols_iones, cols_tox_semanal)
+vars_faltantes_iq10 <- setdiff(vars_iq10, names(pacientes_TMN_7d))
+
+if (length(vars_faltantes_iq10) > 0) {stop( paste( "Faltan las siguientes variables en la base de datos:", paste(vars_faltantes_iq10, collapse = ", ")))}
+
+# 4. Crear indicadores de cumplimiento por bloque
+# TRUE = bloque completo; FALSE = al menos un dato ausente
+pacientes_TMN_7d <- pacientes_TMN_7d %>% mutate(Check_Aportes = rowSums(is.na(across(all_of(cols_aportes)))) == 0, Check_Hidrico = rowSums(is.na(across(all_of(cols_hidrico)))) == 0, Check_Iones = rowSums(is.na(across(all_of(cols_iones)))) == 0, Check_Toxicidad = rowSums(is.na(across(all_of(cols_tox_semanal)))) == 0, Exito_IQ10 = Check_Aportes & Check_Hidrico & Check_Iones & Check_Toxicidad)
+
+# 5. Cálculo principal del indicador
+Numerador_IQ10 <- sum(pacientes_TMN_7d$Exito_IQ10, na.rm = TRUE)
+
+# 6. Cálculo del indicador e intervalo de confianza (IC95%)
+IQ10 <- (Numerador_IQ10 / Denominador_IQ10) * 100
+
+test_iq10 <- prop.test(x = Numerador_IQ10, n = Denominador_IQ10, conf.level = 0.95)
+
+IC_Inf_IQ10 <- round(test_iq10$conf.int[1] * 100, 2)
+IC_Sup_IQ10 <- round(test_iq10$conf.int[2] * 100, 2)
+
+# 7. Imprimir resultados
+print(paste("Pacientes con TMN correcta y completamente monitorizados para nutritrauma:", Numerador_IQ10)); print(paste("Pacientes con TMN durante al menos 7 días:", Denominador_IQ10)); print(paste("El", round(IQ10, 2), "% de los pacientes con TMN durante al menos 7 días estaban correcta y completamente monitorizados para nutritrauma con un IC 95% de [", IC_Inf_IQ10, "% -", IC_Sup_IQ10, "%]"))
+
+# 8. Gráfico del indicador
+datos_grafico_iq10 <- data.frame(Indicador = "IQ10", Cumplimiento = IQ10, IC_Inf = IC_Inf_IQ10, IC_Sup = IC_Sup_IQ10, Etiqueta = paste0( Numerador_IQ10, " pcts.", "\n", round(IQ10, 2), "%", "\nIC95%: ", IC_Inf_IQ10, "-", IC_Sup_IQ10, "%"))
+
+grafico_iq10 <- ggplot(datos_grafico_iq10, aes(x = Indicador, y = Cumplimiento)) + geom_col(width = 0.45) + geom_errorbar(aes(ymin = IC_Inf, ymax = IC_Sup), width = 0.12, linewidth = 0.8) + geom_hline(yintercept = 100, linetype = "dashed", linewidth = 0.8) + annotate("text", x = 1.35, y = 100, label = "Estándar 100%", hjust = 0, vjust = -0.5, size = 4) + geom_text(aes(label = Etiqueta), vjust = -0.6, size = 4) + scale_y_continuous(limits = c(0, 110), breaks = seq(0, 100, 20), labels = function(x) paste0(x, "%")) + labs(title = "IQ10. Monitorización de nutritrauma en pacientes con TMN", subtitle = "Cumplimiento documental con intervalo de confianza al 95%", x = NULL, y = "Cumplimiento del indicador") + theme_minimal(base_size = 13) + theme(plot.title = element_text(face = "bold"), axis.text.x = element_text(face = "bold"), panel.grid.minor = element_blank())
+
+grafico_iq10
+```
+
+El IQ10 alcanzó una tasa de cumplimiento del **`r round(IQ10, 2)`%** (**`r Numerador_IQ10`/`r Denominador_IQ10`**; IC95%: **`r IC_Inf_IQ10`-`r IC_Sup_IQ10`%**), situándose de forma muy marcada por debajo del estándar teórico del 100%. Por tanto, la mayoría de los pacientes evaluables no presentó un registro completo de todos los componentes exigidos para considerar correcta la monitorización documental del nutritrauma.
+
+Este resultado debe interpretarse con cautela, ya que el incumplimiento del indicador no implica necesariamente ausencia de vigilancia clínica, sino falta de constancia completa en la base de datos. Al tratarse de un indicador compuesto y muy estricto, la ausencia de un único dato de aportes, balance hídrico, electrolitos o perfil hepato-lipídico basta para clasificar al paciente como no correctamente monitorizado.
+
+La ausencia de variables específicas de glucemia y la disponibilidad de controles hidroelectrolíticos únicamente en cortes seriados —días 1, 3 y 7— constituyen limitaciones metodológicas relevantes. Aun así, el resultado evidencia una fragmentación extrema del registro estructurado de seguridad metabólica en los pacientes con TMN prolongado.
+
+### **Parámetros clínicos olvidados**
+
+El análisis desglosado de los componentes del IQ10 se realizó identificando, para cada variable incluida en el algoritmo del indicador, el número absoluto de pacientes con dato ausente dentro de la cohorte evaluable de TMN prolongado. Posteriormente, se calculó el porcentaje de omisión documental sobre el denominador del indicador (`Denominador_IQ10`) y cada variable fue asignada a su bloque de monitorización correspondiente: aportes nutricionales, balance hídrico, electrolitos seriados o toxicidad hepato-lipídica semanal. Este análisis permite localizar qué componentes concretos condicionan con mayor peso el incumplimiento global del indicador compuesto.
+
+```{r}
+# 1. Unir todas las variables que conforman el IQ10
+todas_las_variables_iq10 <- c(cols_aportes, cols_hidrico, cols_iones, cols_tox_semanal)
+
+# 2. Calcular valores ausentes por variable en la cohorte evaluable
+desglose_elementos_iq10 <- pacientes_TMN_7d %>% select(all_of(todas_las_variables_iq10)) %>% summarise(across(everything(), ~sum(is.na(.)), .names = "{.col}")) %>% pivot_longer(cols = everything(), names_to = "Elemento_Clinico", values_to = "Pacientes_con_Fallo") %>% mutate(Porcentaje_Fallo = round((Pacientes_con_Fallo / Denominador_IQ10) * 100, 2), Bloque_Origen = case_when(Elemento_Clinico %in% cols_aportes ~ "Bloque A: Aportes", Elemento_Clinico %in% cols_hidrico ~ "Bloque B: Hídrico", Elemento_Clinico %in% cols_iones ~ "Bloque C: Iones", Elemento_Clinico %in% cols_tox_semanal ~ "Bloque D: Toxicidad"), Etiqueta = paste0("n = ", Pacientes_con_Fallo, " pcts. (", Porcentaje_Fallo, "%)"))
+
+# 3. Filtrar variables con al menos un fallo documental
+datos_grafico_iq10_fallos <- desglose_elementos_iq10 %>% filter(Pacientes_con_Fallo > 0)
+
+# 4. Gráfico de porcentaje de omisión por parámetro clínico
+grafico_fallos <- ggplot(datos_grafico_iq10_fallos, aes(x = reorder(Elemento_Clinico, Porcentaje_Fallo), y = Porcentaje_Fallo, fill = Bloque_Origen)) + geom_bar(stat = "identity", color = "black", alpha = 0.8) + coord_flip() + scale_fill_manual(values = c("Bloque A: Aportes" = "#56B4E9", "Bloque B: Hídrico" = "#009E73", "Bloque C: Iones" = "#E69F00", "Bloque D: Toxicidad" = "#D55E00")) + geom_text(aes(label = Etiqueta), hjust = -0.1, size = 2.5, fontface = "bold") + scale_y_continuous(limits = c(0, max(datos_grafico_iq10_fallos$Porcentaje_Fallo) + 18), breaks = seq(0, 100, 10)) + labs(title = "Radiografía del Nutritrauma: Parámetros Clínicos Olvidados", subtitle = paste0("Porcentaje de omisión sobre la cohorte de ", Denominador_IQ10, " pacientes evaluables con TMN prolongado"), x = "Parámetro clínico", y = "Porcentaje de omisión documental (%)", fill = "Bloque de monitorización") + theme_minimal() + theme(plot.title = element_text(face = "bold", size = 14), axis.text.y = element_text(face = "bold", size = 10), legend.position = "bottom")
+
+print(grafico_fallos)
+```
+
+El gráfico muestra una distribución claramente asimétrica de la omisión documental entre los distintos componentes del IQ10. Las mayores tasas de ausencia se concentran en el bloque hídrico, especialmente en las variables de diuresis de 24 horas (`ORUR24H1`, `ORUR24H3` y `ORUR24H7`), con porcentajes de omisión superiores al 85%, lo que sugiere que este dominio actúa como principal limitante estructural del cumplimiento global. En segundo término, destacan determinadas variables hepato-lipídicas y electrolíticas —especialmente triglicéridos, fósforo y magnesio—, mientras que los aportes calórico-proteicos presentan una completitud documental mucho mayor. Desde el punto de vista estadístico, el resultado indica que el bajo cumplimiento del IQ10 no se distribuye de forma homogénea entre bloques, sino que está determinado por cuellos de botella específicos de registro.
+
+### **Justificación ausencia análisis univariante y multivariante**
+
+No es recomendable realizar un análisis univariante o multivariante tomando el IQ10 como variable dependiente porque el número de eventos favorables es extremadamente bajo: solo **5 pacientes cumplidores** frente a **371 no cumplidores**. Esta desproporción genera separación casi completa, estimaciones inestables, intervalos de confianza muy amplios y alto riesgo de sobreajuste. En términos prácticos, el indicador no tiene variabilidad suficiente para modelizar factores asociados al cumplimiento; debe interpretarse como una auditoría descriptiva de trazabilidad documental, no como un desenlace apto para inferencia multivariable.
+
+### **Conclusión Indicador de Calidad 10**
+
+En conjunto, el análisis del IQ10 evidencia un **cumplimiento documental extremadamente bajo** de la monitorización integral del nutritrauma en pacientes con tratamiento médico nutricional prolongado. Solo **5 de los 376 pacientes** con TMN durante al menos 7 días presentaron registro completo de todos los bloques exigidos, lo que supone una tasa de cumplimiento del **1,33%** (IC95%: **0,49 - 3,26%**), prácticamente nula en términos operativos y muy alejada del estándar teórico del **100%**.
+
+El problema principal no debe interpretarse como una ausencia demostrada de vigilancia clínica a pie de cama, sino como una **fractura crítica de la trazabilidad documental** del seguimiento metabólico del TMN. El IQ10 se comporta como un indicador compuesto de seguridad muy estricto: basta la ausencia de un único dato de aportes, balance hídrico, electrolitos o perfil hepato-lipídico para que el paciente sea clasificado como no correctamente monitorizado. En la auditoría se definió precisamente como un indicador documental de cumplimiento integral bajo regla de “todo o nada”.
+
+**Interpretación del fallo del indicador**
+
+El IQ10 no mide directamente la aparición de nutritrauma ni demuestra por sí mismo que el paciente no fuera controlado clínicamente. Lo que mide es si la vigilancia metabólica preventiva quedó registrada de forma completa, estructurada y simultánea en los dominios disponibles de la base ENPIC.
+
+Por tanto, el incumplimiento debe interpretarse principalmente como un **fallo de completitud del registro de seguridad metabólica**, no como prueba directa de ausencia asistencial. La baja tasa de cumplimiento indica que el seguimiento del riesgo de nutritrauma no queda suficientemente integrado en un circuito documental homogéneo y auditable.
+
+La restricción del denominador a pacientes con TMN durante al menos 7 días fue metodológicamente razonable, ya que algunos componentes del indicador —como triglicéridos y perfil hepático— tienen periodicidad semanal. Sin embargo, incluso tras esta adaptación, el cumplimiento fue residual, lo que refuerza la magnitud del problema documental.
+
+**Origen principal de los fallos documentales**
+
+El análisis microscópico de las omisiones muestra que el incumplimiento del IQ10 no se distribuye de forma uniforme entre todos los componentes del indicador, sino que se concentra en dominios muy concretos.
+
+El principal punto de fallo fue el **bloque hídrico**, especialmente la diuresis de 24 horas en los cortes disponibles: **ORUR24H1** con 348 pacientes sin registro (**92,55%**), **ORUR24H3** con 332 pacientes (**88,30%**) y **ORUR24H7** con 324 pacientes (**86,17%**).
+
+Este patrón indica que el componente de balance hídrico actúa como el **principal cuello de botella estructural** del indicador. Aunque la diuresis pueda registrarse en la práctica clínica habitual, no aparece incorporada de forma suficientemente sistemática en la base ENPIC para permitir una auditoría completa.
+
+En segundo lugar, destacan las omisiones en parámetros de toxicidad hepato-lipídica y electrolitos: **TRIGLI7** con 207 pacientes sin registro (**55,05%**), **FOSFORO1** con 158 pacientes (**42,02%**), **MAGNESIO1** con 150 pacientes (**39,89%**), **FALCALI7** con 141 pacientes (**37,50%**), **MAGNESIO7** con 138 pacientes (**36,70%**), **FOSFORO7** con 137 pacientes (**36,44%**), **MAGNESIO3** con 127 pacientes (**33,78%**), **FOSFORO3** con 125 pacientes (**33,24%**) y **GOT7** con 117 pacientes (**31,12%**).
+
+Este perfil sugiere que la monitorización bioquímica más específicamente vinculada al riesgo de nutritrauma —fósforo, magnesio, triglicéridos y función hepática— no está plenamente protocolizada en el registro estructurado.
+
+**Contraste con los aportes nutricionales**
+
+A diferencia de lo observado en el bloque hídrico y en parte del bloque analítico, los aportes calórico-proteicos mostraron una completitud documental mucho mayor. Las omisiones en calorías y proteínas fueron, en general, bajas, especialmente en los primeros días de seguimiento.
+
+Esto sugiere que el sistema de registro del aporte nutricional diario funciona de forma relativamente estable, mientras que la vigilancia metabólica asociada al riesgo de complicaciones —balance hídrico, electrolitos críticos y toxicidad hepato-lipídica— presenta una integración mucho más débil.
+
+Dicho de otro modo, el problema del IQ10 no parece estar tanto en saber cuánto soporte nutricional recibe el paciente, sino en documentar de forma completa si ese soporte se está administrando con la seguridad metabólica exigible.
+
+**Limitaciones metodológicas específicas**
+
+La interpretación del IQ10 debe considerar dos limitaciones importantes. En primer lugar, la base ENPIC no dispone de variables específicas de glucemia seriada, por lo que uno de los componentes del indicador original no pudo incorporarse al algoritmo automatizado. En segundo lugar, aunque el indicador teórico exige monitorización diaria del balance hídrico y de los electrolitos, la estructura de ENPIC solo permite auditar estos parámetros en cortes seriados —días 1, 3 y 7—.
+
+Por tanto, el resultado debe considerarse una **aproximación documental parcial** al estándar completo de monitorización del nutritrauma. Aun así, esta limitación no debilita la conclusión principal: incluso evaluando solo los componentes disponibles, la completitud del registro fue extremadamente baja.
+
+**Ausencia de análisis univariante y multivariante**
+
+No se realizó análisis univariante ni multivariante del IQ10 porque el número de pacientes cumplidores fue demasiado bajo para permitir una inferencia estadística válida. Con solo **5 eventos favorables** frente a **371 incumplimientos**, cualquier modelo explicativo presentaría separación casi completa, estimaciones inestables, intervalos de confianza excesivamente amplios y alto riesgo de sobreajuste.
+
+En consecuencia, el IQ10 no debe tratarse como un desenlace apto para modelización predictiva, sino como una **auditoría descriptiva de trazabilidad documental**. Su valor no reside en identificar factores independientes asociados al cumplimiento, sino en demostrar que el sistema de registro no permite acreditar de forma robusta la monitorización integral del riesgo de nutritrauma.
+
+**Problemas detectados en el proceso documental**
+
+El análisis del IQ10 identifica varios puntos críticos:
+
+- **Cumplimiento global prácticamente residual** bajo una regla estricta de monitorización completa.
+
+- **Dependencia extrema del resultado respecto al bloque hídrico**, especialmente las variables de diuresis de 24 horas.
+
+- **Omisión relevante de parámetros bioquímicos clave**, sobre todo triglicéridos, fósforo, magnesio y perfil hepático.
+
+- **Mejor completitud relativa de los aportes calórico-proteicos**, lo que indica que el registro nutricional básico está más consolidado que la vigilancia metabólica de seguridad.
+
+- **Imposibilidad de incorporar glucemia seriada**, lo que limita la auditoría completa del indicador original.
+
+- **Imposibilidad estadística de modelizar el cumplimiento**, debido al número casi inexistente de pacientes cumplidores.
+
+**Auditoría clínica y oportunidades de mejora**
+
+Desde la perspectiva de calidad asistencial, el IQ10 señala una oportunidad de mejora prioritaria: **transformar la monitorización del nutritrauma en un proceso estructurado, automatizado y trazable**.
+
+Las acciones prioritarias deberían centrarse en:
+
+1. **Crear un perfil analítico específico de seguridad nutricional** para pacientes con TMN prolongado, que incluya fósforo, magnesio, potasio, sodio, triglicéridos y perfil hepático.
+
+2. **Integrar el balance hídrico en el circuito de auditoría nutricional**, especialmente la diuresis de 24 horas en los días de control.
+
+3. **Incorporar glucemias seriadas o su equivalente estructurado** en futuras versiones de la base de datos.
+
+4. **Activar alertas automáticas** cuando un paciente con TMN alcance 7 días sin registro completo de los controles metabólicos exigidos.
+
+5. **Estandarizar plantillas de seguimiento del nutritrauma**, vinculando aportes, balance hídrico, electrolitos, triglicéridos y función hepática en un único bloque de revisión.
+
+6. **Diferenciar vigilancia clínica real y vigilancia documentada**, para evitar que controles realizados pero no incorporados al registro estructurado se traduzcan en incumplimiento del indicador.
+
+**Relevancia final del indicador**
+
+El IQ10 es probablemente uno de los indicadores más duros de la auditoría, porque no evalúa un único acto asistencial, sino la existencia de una red completa de monitorización metabólica alrededor del TMN. Su resultado extremadamente bajo no debe leerse como una prueba directa de abandono clínico, sino como un **marcador muy sensible de baja protocolización documental**.
+
+Su principal utilidad es hacer visible un problema que puede pasar desapercibido: el TMN puede estar correctamente prescrito y los aportes pueden estar registrados, pero si no se documentan de forma sistemática los parámetros que permiten detectar precozmente el nutritrauma, el proceso no es plenamente auditable.
+
+En consecuencia, el IQ10 funciona como un indicador de seguridad documental. Su mejora no depende únicamente de vigilar más, sino de **registrar mejor, integrar mejor y automatizar mejor** la vigilancia metabólica que ya debería acompañar al soporte nutricional prolongado.
+
