@@ -1,0 +1,1095 @@
+---
+title: "Indicador 4: Adecuación del Aporte Calórico y Proteico del Soporte Nutricional"
+author: "Carmen Macías Portillo"
+date: "`r Sys.Date()`"
+output: 
+  prettydoc::html_pretty:
+    theme: tactile
+    toc: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+```{r}
+# Cargamos la librería 'haven', necesaria para cargar archivos .sav (SPSS)
+library(haven)
+# Cargamos el archivo .sav
+enpic <- read_sav("ENPIC_BMI_525.sav")
+```
+
+## **Indicador de Calidad 4** (**IQ4**): Adecuación del aporte calórico y proteico del soporte nutricional
+
+### **Observación global**
+
+Para evaluar la precisión terapéutica continuada durante la fase estable del paciente (día 4 de ingreso), el indicador se ha operativizado bajo los siguientes criterios técnicos:
+
+- **Población diana** ($N$): Para la operacionalización del IQ4, se consideró como población diana a la cohorte de pacientes con soporte nutricional efectivo durante al menos 4 días en la UCI (`TOTAL_DIAS_SN >= 4`) y con registros válidos en las variables de aporte calórico y proteico al cuarto día (`CALORIA4` y `PROT4`).
+
+- **Casos favorables** ($n$): Dado que este indicador evalúa dos metas simultáneas, el numerador se desglosa en dos estimaciones independientes, previo cálculo de un peso de referencia dinámico (peso actual si $IMC < 30$, o peso ajustado si $IMC \ge 30$):
+  - **Adecuación calórica** ($n_{kcal}$): Número de pacientes cuyo aporte calórico normalizado se sitúa entre 20 y 30 kcal/kg/día (equivalente al 80-100% del requerimiento).
+  - **Adecuación proteica** ($n_{prot}$): Número de pacientes cuyo aporte proteico normalizado es $\ge 1.3$ g/kg/día.
+
+Las proporciones de cumplimiento se calcularon como el cociente entre los pacientes que alcanzaron cada meta nutricional respectiva y el total de pacientes de la población diana.
+
+$$IQ4_{Kcal} = \left( \frac{\text{Nº de pacientes con aporte calórico adecuado}}{\text{Nº de pacientes evaluables al 4º día}} \right) \times 100$$
+
+$$IQ4_{Prot} = \left( \frac{\text{Nº de pacientes con aporte proteico adecuado}}{\text{Nº de pacientes evaluables al 4º día}} \right) \times 100$$
+
+Para cuantificar la precisión de las estimaciones se calcularon los intervalos de confianza asintóticos para proporciones al 95%.
+
+```{r IQ4 percentage}
+# 1. Definir el subset: Pacientes con Soporte Nutricional (>= 4 días en UCI) y registros válidos
+# Filtrar los valores nulos para asegurar que evaluamos solo información clínica certera
+pacientes_tmn_4dias <- subset(enpic, enpic$TOTAL_DIAS_SN >= 4 & !is.na(CALORIA4) & !is.na(PROT4))
+Denominador_IQ4 <- nrow(pacientes_tmn_4dias)
+
+# 2. Calcular el Peso de Referencia (Peso Actual si IMC < 30; Peso Ajustado si IMC >= 30)
+pacientes_tmn_4dias$Peso_Ideal <- 22.5 * (pacientes_tmn_4dias$TALLA ^ 2)
+pacientes_tmn_4dias$Peso_Ajustado <- pacientes_tmn_4dias$Peso_Ideal + 0.25 * (pacientes_tmn_4dias$PESOACT - pacientes_tmn_4dias$Peso_Ideal)
+pacientes_tmn_4dias$Peso_Ref <- ifelse(pacientes_tmn_4dias$BMI < 30, pacientes_tmn_4dias$PESOACT, pacientes_tmn_4dias$Peso_Ajustado)
+
+# 3. Adecuación calórica
+# La meta según guía es recibir entre 20 (el 80% de 25) y 30 kcal/kg
+pacientes_tmn_4dias$Kcal_kg_D4 <- pacientes_tmn_4dias$CALORIA4 / pacientes_tmn_4dias$Peso_Ref
+Numerador_Calorias_IQ4 <- sum(pacientes_tmn_4dias$Kcal_kg_D4 >= 20 & pacientes_tmn_4dias$Kcal_kg_D4 <= 30, na.rm = TRUE)
+
+# 4. Adecuación proteica
+# La meta es recibir más de 1.3 g/kg
+pacientes_tmn_4dias$Prot_kg_D4 <- pacientes_tmn_4dias$PROT4 / pacientes_tmn_4dias$Peso_Ref
+Numerador_Proteinas_IQ4 <- sum(pacientes_tmn_4dias$Prot_kg_D4 >= 1.3, na.rm = TRUE)
+
+# 5. Cálculos de IQ4 (Porcentajes)
+IQ4_Kcal <- (Numerador_Calorias_IQ4 / Denominador_IQ4) * 100
+IQ4_Prot <- (Numerador_Proteinas_IQ4 / Denominador_IQ4) * 100
+
+# 6. Intervalos de confianza (95%) para los indicadores globales
+# Usar prop.test, que es el método estadístico robusto para proporciones
+test_kcal <- prop.test(Numerador_Calorias_IQ4, Denominador_IQ4, conf.level = 0.95)
+test_prot <- prop.test(Numerador_Proteinas_IQ4, Denominador_IQ4, conf.level = 0.95)
+
+# Extraer los límites inferior y superior y pasarlos a porcentaje
+IC_Kcal_Inf <- round(test_kcal$conf.int[1] * 100, 2)
+IC_Kcal_Sup <- round(test_kcal$conf.int[2] * 100, 2)
+
+IC_Prot_Inf <- round(test_prot$conf.int[1] * 100, 2)
+IC_Prot_Sup <- round(test_prot$conf.int[2] * 100, 2)
+
+# 7. Imprimir resultados
+print(paste("Número de pacientes con registro completo evaluados (Denominador):", Denominador_IQ4)); print(paste("Pacientes que reciben el 80-100% del REE (meta calórica):", Numerador_Calorias_IQ4)); print(paste("El", round(IQ4_Kcal, 2), "% de los pacientes alcanzaron la meta calórica. IC 95%: [", IC_Kcal_Inf, "% -", IC_Kcal_Sup, "%]")); print(paste("Pacientes que reciben > 1.3 g/kg/día (meta proteica):", Numerador_Proteinas_IQ4)); print(paste("El", round(IQ4_Prot, 2), "% de los pacientes alcanzaron la meta proteica. IC 95%: [", IC_Prot_Inf, "% -", IC_Prot_Sup, "%]"))
+```
+
+```{r IQ4 graphic}
+# 8. Gráfico de barras
+# Cargar la librería
+library(ggplot2)
+
+# 8.1. Construcción del Data Frame con los resultados globales, sus IC 95% y la n
+df_iq4_global <- data.frame(Meta = c("Adecuación Calórica\n(20-30 kcal/kg)", "Adecuación Proteica\n(> 1.3 g/kg)"), Porcentaje = c(IQ4_Kcal, IQ4_Prot), IC_Inf = c(IC_Kcal_Inf, IC_Prot_Inf), IC_Sup = c(IC_Kcal_Sup, IC_Prot_Sup),N_Pacientes = c(Numerador_Calorias_IQ4, Numerador_Proteinas_IQ4))
+
+# Forzar el orden de los factores para que aparezca primero la calórica
+df_iq4_global$Meta <- factor(df_iq4_global$Meta, levels = df_iq4_global$Meta)
+
+# 8.2. Generación del gráfico de barras con barras de error
+grafico_iq4_global <- ggplot(df_iq4_global, aes(x = Meta, y = Porcentaje, fill = Meta)) +
+  # Barras principales
+  geom_bar(stat = "identity", color = "black", width = 0.5, alpha = 0.85) +
+  # Barras de error (Intervalo de Confianza al 95%)
+  geom_errorbar(aes(ymin = IC_Inf, ymax = IC_Sup), width = 0.15, linewidth = 1) +
+  # Etiquetas de datos: Añadimos la n usando sprintf ("%.2f%% (n = %d)")
+  geom_text(aes(label = sprintf("%.2f%% (n = %d)", Porcentaje, N_Pacientes), y = IC_Sup + 4), fontface = "bold", size = 5) +
+  # Línea roja del Estándar de Calidad Clínico (80%)
+  geom_hline(yintercept = 80, linetype = "dashed", color = "#D32F2F", linewidth = 1.2) + annotate("text", x = 1.5, y = 84, label = "Estándar de Calidad Clínico (80%)", color = "#D32F2F", fontface = "bold", size = 4.5) +
+  # Estética y colores
+  scale_fill_manual(values = c("Adecuación Calórica\n(20-30 kcal/kg)" = "#4DB6AC", "Adecuación Proteica\n(> 1.3 g/kg)" = "#7986CB")) + scale_y_continuous(limits = c(0, 100), breaks = seq(0, 100, by = 20)) + theme_minimal() +
+  # Etiquetas y títulos
+  labs(title = "Cumplimiento Global de las Metas Nutricionales en Fase Estable (Día 4)", y = "Pacientes que alcanzan la meta (%)", x = "") + theme(legend.position = "none", plot.title = element_text(face = "bold", size = 14, hjust = 0.5, margin = margin(b = 20)), axis.text.x = element_text(face = "bold", size = 12, color = "black"), axis.title.y = element_text(face = "bold", size = 11, margin = margin(r = 15)), panel.grid.major.x = element_blank())
+
+# 8.3. Visualizar el gráfico
+print(grafico_iq4_global)
+```
+
+El IQ4 alcanzó una tasa de cumplimiento del **`r round(IQ4_Kcal, 2)`%** para la meta calórica, correspondiente a **`r Numerador_Calorias_IQ4` pacientes**, y del **`r round(IQ4_Prot, 2)`%** para la meta proteica, correspondiente a **`r Numerador_Proteinas_IQ4` pacientes**, sobre un total de `r Denominador_IQ4` pacientes evaluables. Los intervalos de confianza asintóticos al 95% fueron de **[`r IC_Kcal_Inf`% - `r IC_Kcal_Sup`%]** y **[`r IC_Prot_Inf`% - `r IC_Prot_Sup`%]**, respectivamente.
+
+Aunque el estándar clínico definido para este indicador establece un cumplimiento mínimo del 80%, el resultado muestra una **adherencia claramente insuficiente** en ambas metas terapéuticas. El margen de incumplimiento es especialmente marcado en el aporte proteico, correspondiente a **`r Denominador_IQ4 - Numerador_Proteinas_IQ4` pacientes** (el **`r round(100 - IQ4_Prot, 2)`%** de la cohorte) que no alcanzaron el umbral recomendado de >1,3 g/kg/día. Desde el punto de vista de auditoría, estos resultados evidencian un **margen de mejora sustancial** en la optimización del soporte nutricional en la fase estable.
+
+### **Distribución tricotómica de la adecuación calórica**
+
+Con el fin de evitar la pérdida de información derivada de una clasificación dicotómica simple (cumple/no cumple), se realizó una categorización tricotómica del aporte calórico en el día 4, distinguiendo entre hipoalimentación, normoalimentación y sobrealimentación.
+
+```{r tricotomy graphic}
+# Cargar la librería necesaria
+library(dplyr)
+
+# 1. Crear la nueva variable categórica (tricotomía nutricional)
+pacientes_tmn_4dias <- pacientes_tmn_4dias %>%
+  mutate(Grupo_Calorico_D4 = case_when(Kcal_kg_D4 < 20 ~ "1. Hipoalimentados (< 20 kcal/kg)",
+      Kcal_kg_D4 >= 20 & Kcal_kg_D4 <= 30 ~ "2. Normoalimentados (20-30 kcal/kg)",
+      Kcal_kg_D4 > 30 ~ "3. Sobrealimentados (> 30 kcal/kg)",
+      TRUE ~ NA_character_))
+
+# 2. Extraer el resumen para ver la distribución real en la UCI
+tabla_distribucion <- table(pacientes_tmn_4dias$Grupo_Calorico_D4, useNA = "ifany")
+porcentajes_distribucion <- prop.table(tabla_distribucion) * 100
+
+# 3. Gráfico de distribución de los grupos nutricionales
+# Cargar libería necesaria
+library(ggplot2)
+
+# Convertir la tabla a data.frame para ggplot
+df_distribucion <- as.data.frame(tabla_distribucion)
+colnames(df_distribucion) <- c("Grupo", "Pacientes")
+
+# Construir el gráfico
+grafico_distribucion <- ggplot(df_distribucion, aes(x = Grupo, y = Pacientes, fill = Grupo)) + geom_bar(stat = "identity", color = "black", alpha = 0.8, width = 0.6) +
+  # Añadimos las etiquetas con el número y el porcentaje
+  geom_text(aes(label = paste0(Pacientes, " pac. (", round((Pacientes/sum(Pacientes))*100, 1), "%)")), vjust = -0.8, fontface = "bold", size = 4) + scale_fill_brewer(palette = "Set2") + theme_minimal() + labs(title = "Distribución de Pacientes por Adecuación Calórica (Día 4)", x = "Grupo Nutricional", y = "Número de Pacientes") +
+  # Forzamos el límite Y un poco más alto para que quepa bien el texto
+  scale_y_continuous(limits = c(0, max(df_distribucion$Pacientes) * 1.15)) + theme(legend.position = "none", axis.text.x = element_text(angle = 10, hjust = 0.5, face = "bold", size = 10), plot.title = element_text(face = "bold"), plot.margin = margin(10, 20, 20, 40))
+
+# Mostrar el gráfico
+print(grafico_distribucion)
+```
+
+La distribución tricotómica del aporte calórico confirma que el principal patrón de inadecuación fue la hipoalimentación, presente en el 52,0% de los pacientes, mientras que la sobrealimentación fue poco frecuente.
+
+#### **Análisis univariante de la adecuación calórica**
+
+Se realizó un análisis univariante para comparar las características clínicas, nutricionales y evolutivas de los pacientes según los tres grupos de adecuación calórica al cuarto día de soporte nutricional: hipoalimentados, normoalimentados y sobrealimentados.
+
+- Las **variables cuantitativas con distribución asimétrica** se expresaron como **mediana y rango intercuartílico** [**Q1**-**Q3**], comparándose entre grupos mediante la prueba no paramétrica de **Kruskal-Wallis**.
+
+- Las **variables cuantitativas con distribución aproximadamente normal** se expresaron como **media ± desviación estándar** y se compararon mediante análisis de la varianza de un factor —**ANOVA**—.
+
+- Las **variables categóricas** se expresaron como **frecuencias absolutas y porcentajes**, y se compararon mediante la prueba de **chi-cuadrado**. En las variables dicotómicas de antecedentes, complicaciones o eventos clínicos se muestra únicamente la categoría afirmativa —“Sí”—, aunque el contraste estadístico se calculó considerando ambas categorías de respuesta. Los porcentajes se calcularon sobre el número de pacientes con dato disponible para cada variable. En las variables categóricas con frecuencias esperadas bajas, los resultados deben interpretarse con cautela por la posible inestabilidad del contraste estadístico.
+
+Finalmente, los valores de p se formatearon visualmente para destacar las asociaciones estadísticamente significativas o potencialmente relevantes desde el punto de vista exploratorio.
+
+```{r univariant analysis kcal}
+library(dplyr); library(tidyr)
+
+# Función para variables asimétricas: mediana [Q1-Q3] + Kruskal-Wallis
+crear_fila_kw <- function(data, variable, nombre_variable) {
+  tabla <- data %>% filter(!is.na(.data[[variable]]), !is.na(Grupo_Calorico_D4)) %>% group_by(Grupo_Calorico_D4) %>% summarise(valor = paste0(round(median(.data[[variable]]), 1), " [", round(quantile(.data[[variable]], 0.25), 1), " - ", round(quantile(.data[[variable]], 0.75), 1), "]"), .groups = "drop") %>% mutate(Grupo_Calorico_D4 = recode(Grupo_Calorico_D4, "1. Hipoalimentados (< 20 kcal/kg)" = "Hipoalimentados", "2. Normoalimentados (20-30 kcal/kg)" = "Normoalimentados", "3. Sobrealimentados (> 30 kcal/kg)" = "Sobrealimentados")) %>% pivot_wider(names_from = Grupo_Calorico_D4, values_from = valor)
+  p <- kruskal.test(as.formula(paste(variable, "~ Grupo_Calorico_D4")), data = data)$p.value
+  tabla %>% mutate(Variable = nombre_variable, p = ifelse(p < 0.001, "<0.001", as.character(round(p, 3)))) %>% select(Variable, everything())
+}
+
+# Función para variables normales: media ± DE + ANOVA
+crear_fila_anova <- function(data, variable, nombre_variable) {
+  tabla <- data %>% filter(!is.na(.data[[variable]]), !is.na(Grupo_Calorico_D4)) %>% group_by(Grupo_Calorico_D4) %>% summarise(valor = paste0(round(mean(.data[[variable]]), 1), " ± ", round(sd(.data[[variable]]), 1)), .groups = "drop") %>% mutate(Grupo_Calorico_D4 = recode(Grupo_Calorico_D4, "1. Hipoalimentados (< 20 kcal/kg)" = "Hipoalimentados", "2. Normoalimentados (20-30 kcal/kg)" = "Normoalimentados", "3. Sobrealimentados (> 30 kcal/kg)" = "Sobrealimentados")) %>% pivot_wider(names_from = Grupo_Calorico_D4, values_from = valor)
+  p <- summary(aov(as.formula(paste(variable, "~ Grupo_Calorico_D4")), data = data))[[1]][["Pr(>F)"]][1]
+  tabla %>% mutate(Variable = nombre_variable, p = ifelse(p < 0.001, "<0.001", as.character(round(p, 3)))) %>% select(Variable, everything())
+}
+
+# Función para variables categóricas: n (%) + chi-cuadrado
+crear_fila_chi <- function(data, variable, nombre_variable, niveles, etiquetas) {
+  data_cat <- data %>% filter(!is.na(.data[[variable]]), !is.na(Grupo_Calorico_D4)) %>% mutate(var_cat = factor(.data[[variable]], levels = niveles, labels = etiquetas), Grupo_Calorico_D4 = recode(Grupo_Calorico_D4, "1. Hipoalimentados (< 20 kcal/kg)" = "Hipoalimentados", "2. Normoalimentados (20-30 kcal/kg)" = "Normoalimentados", "3. Sobrealimentados (> 30 kcal/kg)" = "Sobrealimentados"))
+  tabla <- data_cat %>% count(Grupo_Calorico_D4, var_cat) %>% group_by(Grupo_Calorico_D4) %>% mutate(valor = paste0(n, " (", round(n / sum(n) * 100, 1), "%)")) %>% ungroup() %>% select(Grupo_Calorico_D4, var_cat, valor) %>% pivot_wider(names_from = Grupo_Calorico_D4, values_from = valor)
+  p <- chisq.test(table(data_cat$var_cat, data_cat$Grupo_Calorico_D4))$p.value
+  tabla %>% mutate(Variable = paste0(nombre_variable, ": ", var_cat), p = ifelse(row_number() == 1, ifelse(p < 0.001, "<0.001", as.character(round(p, 3))), "")) %>% select(-var_cat) %>% select(Variable, everything())
+}
+
+# Función para variables categóricas de Sí/No
+crear_fila_chi_si <- function(data, variable, nombre_variable, niveles, etiquetas, categoria_mostrar = "Sí") {
+  data_cat <- data %>% filter(!is.na(.data[[variable]]), !is.na(Grupo_Calorico_D4)) %>% mutate(var_cat = factor(.data[[variable]], levels = niveles, labels = etiquetas), Grupo_Calorico_D4 = recode(Grupo_Calorico_D4, "1. Hipoalimentados (< 20 kcal/kg)" = "Hipoalimentados", "2. Normoalimentados (20-30 kcal/kg)" = "Normoalimentados", "3. Sobrealimentados (> 30 kcal/kg)" = "Sobrealimentados"))
+  p <- chisq.test(table(data_cat$var_cat, data_cat$Grupo_Calorico_D4))$p.value
+  data_cat %>% count(Grupo_Calorico_D4, var_cat) %>% group_by(Grupo_Calorico_D4) %>% mutate(valor = paste0(n, " (", round(n / sum(n) * 100, 1), "%)")) %>% ungroup() %>% filter(var_cat == categoria_mostrar) %>% select(Grupo_Calorico_D4, valor) %>% pivot_wider(names_from = Grupo_Calorico_D4, values_from = valor) %>% mutate(Variable = paste0(nombre_variable, ": ", categoria_mostrar), p = ifelse(p < 0.001, "<0.001", as.character(round(p, 3)))) %>% select(Variable, everything())
+}
+
+# Tamaño de cada grupo calórico: n y % sobre el total
+n_grupos_calorias <- pacientes_tmn_4dias %>% filter(!is.na(Grupo_Calorico_D4)) %>% mutate(Grupo_Calorico_D4 = recode(Grupo_Calorico_D4, "1. Hipoalimentados (< 20 kcal/kg)" = "Hipoalimentados", "2. Normoalimentados (20-30 kcal/kg)" = "Normoalimentados", "3. Sobrealimentados (> 30 kcal/kg)" = "Sobrealimentados")) %>% count(Grupo_Calorico_D4) %>% mutate(pct = round(n / sum(n) * 100, 1), nombre_columna = paste0(Grupo_Calorico_D4, " (n = ", n, "; ", pct, "%)"))
+
+nombre_hipo  <- n_grupos_calorias$nombre_columna[n_grupos_calorias$Grupo_Calorico_D4 == "Hipoalimentados"]
+nombre_normo <- n_grupos_calorias$nombre_columna[n_grupos_calorias$Grupo_Calorico_D4 == "Normoalimentados"]
+nombre_sobre <- n_grupos_calorias$nombre_columna[n_grupos_calorias$Grupo_Calorico_D4 == "Sobrealimentados"]
+
+# Tabla final
+tabla_univariante_calorias <- bind_rows(
+  crear_fila_kw(pacientes_tmn_4dias, "EDAD", "Edad, años"),
+  crear_fila_kw(pacientes_tmn_4dias, "BMI", "BMI, kg/m²"),
+  crear_fila_anova(pacientes_tmn_4dias, "APACHEII", "APACHE II"),
+  crear_fila_anova(pacientes_tmn_4dias, "SAPSII", "SAPS II"),
+  crear_fila_kw(pacientes_tmn_4dias, "SOFA1", "SOFA Admisión"),
+  crear_fila_kw(pacientes_tmn_4dias, "NUTRIC_Score", "NUTRIC Score"),
+  crear_fila_chi(pacientes_tmn_4dias, "SEXO", "Sexo", niveles = c(1, 2), etiquetas = c("Hombre", "Mujer")),
+  crear_fila_chi_si(pacientes_tmn_4dias, "AHTA",  "Antecedentes Hipertensión", niveles = c(0, 1), etiquetas = c("No", "Sí"), categoria_mostrar = "Sí"),
+  crear_fila_chi_si(pacientes_tmn_4dias, "ADBTM", "Antecedentes Diabetes mellitus", niveles = c(0, 1), etiquetas = c("No", "Sí"), categoria_mostrar = "Sí"),
+  crear_fila_chi_si(pacientes_tmn_4dias, "AEPOC", "Antecedentes EPOC", niveles = c(0, 1), etiquetas = c("No", "Sí"), categoria_mostrar = "Sí"),
+  crear_fila_chi_si(pacientes_tmn_4dias, "ACARDIOP", "Antecedentes IAM", niveles = c(0, 1), etiquetas = c("No", "Sí"), categoria_mostrar = "Sí"),
+  crear_fila_chi_si(pacientes_tmn_4dias, "ACIRROSIS", "Enfermedad Hepática Crónica", niveles = c(0, 1), etiquetas = c("No", "Sí"), categoria_mostrar = "Sí"),
+  crear_fila_chi_si(pacientes_tmn_4dias, "AIRC", "Fallo Renal Crónico", niveles = c(0, 1), etiquetas = c("No", "Sí"), categoria_mostrar = "Sí"),
+  crear_fila_chi_si(pacientes_tmn_4dias, "AINMUNO", "Antecedentes Inmunosupresión", niveles = c(0, 1), etiquetas = c("No", "Sí"), categoria_mostrar = "Sí"),
+  crear_fila_chi_si(pacientes_tmn_4dias, "ANEOPLAS", "Antecedentes Neoplasia", niveles = c(0, 1), etiquetas = c("No", "Sí"), categoria_mostrar = "Sí"),
+  crear_fila_chi(pacientes_tmn_4dias, "STATUS3", "Tipo de Paciente", niveles = c(0, 1, 2), etiquetas = c("Quirúrgico", "Médico", "Trauma")),
+  crear_fila_chi_si(pacientes_tmn_4dias, "VGSING2", "Paciente con RN (Basado en VGS)", niveles = c(1, 2), etiquetas = c("No", "Sí"), categoria_mostrar = "Sí"),
+  crear_fila_chi_si(pacientes_tmn_4dias, "NUTRISCOR2", "Paciente con RN (Basado en NUTRIC Score)", niveles = c(0, 1), etiquetas = c("No", "Sí"), categoria_mostrar = "Sí"),
+  crear_fila_kw(pacientes_tmn_4dias, "HORASIN", "Momento Inicio Terapia"),
+  crear_fila_chi(pacientes_tmn_4dias, "TIPO_SN_Grupo", "Tipo de Soporte Nutricional", niveles = c(1, 2, 3, 4), etiquetas = c("NE", "NPT", "NE - NPT", "NPT - NE")),
+  crear_fila_kw(pacientes_tmn_4dias, "TOTAL_DIAS_SN", "Días en Terapia Nutricional"),
+  crear_fila_anova(pacientes_tmn_4dias, "gPROT_14d", "Media g proteína/kg/día"),
+  crear_fila_chi_si(pacientes_tmn_4dias, "ANY_COMPLICATION", "Cualquier Complicación", niveles = c(0, 1), etiquetas = c("No", "Sí"), categoria_mostrar = "Sí"),
+  crear_fila_chi_si(pacientes_tmn_4dias, "PVRGM100", "Volumen de Residuo Gástrico Alto (> 500 mL)", niveles = c(0, 1), etiquetas = c("No", "Sí"), categoria_mostrar = "Sí"),
+  crear_fila_chi_si(pacientes_tmn_4dias, "PDANE", "Diarrea", niveles = c(0, 1), etiquetas = c("No", "Sí"), categoria_mostrar = "Sí"),
+  crear_fila_chi_si(pacientes_tmn_4dias, "PVOMITO", "Vómitos", niveles = c(0, 1), etiquetas = c("No", "Sí"), categoria_mostrar = "Sí"),
+  crear_fila_chi_si(pacientes_tmn_4dias, "PBRONCOAS", "Broncoaspiración", niveles = c(0, 1), etiquetas = c("No", "Sí"), categoria_mostrar = "Sí"),
+  crear_fila_chi_si(pacientes_tmn_4dias, "PISQUINT", "Isquemia Mesentérica", niveles = c(0, 1), etiquetas = c("No", "Sí"), categoria_mostrar = "Sí"),
+  crear_fila_chi_si(pacientes_tmn_4dias, "VM", "Pacientes con Ventilación Mecánica", niveles = c(0, 1), etiquetas = c("No", "Sí"), categoria_mostrar = "Sí"),
+  crear_fila_kw(pacientes_tmn_4dias, "DIASVM", "Días de Ventilación Mecánica"),
+  crear_fila_chi_si(pacientes_tmn_4dias, "NEC_NA", "Necesidad de Noradrenalina", niveles = c(0, 1), etiquetas = c("No", "Sí"), categoria_mostrar = "Sí"),
+  crear_fila_chi_si(pacientes_tmn_4dias, "TRR", "Necesidad de TRR", niveles = c(0, 1), etiquetas = c("No", "Sí"), categoria_mostrar = "Sí"),
+  crear_fila_chi_si(pacientes_tmn_4dias, "INFRESP", "Infección del Tracto Respiratorio", niveles = c(0, 1), etiquetas = c("No", "Sí"), categoria_mostrar = "Sí"),
+  crear_fila_chi_si(pacientes_tmn_4dias, "INFVIA", "Infección relacionada con el Catéter", niveles = c(0, 1), etiquetas = c("No", "Sí"), categoria_mostrar = "Sí"),
+  crear_fila_kw(pacientes_tmn_4dias, "HYPER_UREA", "Nivel de Urea"),
+  crear_fila_anova(pacientes_tmn_4dias, "HYPER_TRIGLI", "Nivel de Triglicéridos"),
+  crear_fila_kw(pacientes_tmn_4dias, "LIVER_DYSFUNCTION", "Disfunción Hepática"),
+  crear_fila_kw(pacientes_tmn_4dias, "CHOLESTASIS", "Colestasis"),
+  crear_fila_kw(pacientes_tmn_4dias, "MIXED_PATTERN", "Patrón Mixto Hepático"),
+  crear_fila_kw(pacientes_tmn_4dias, "DIAS_UCI", "Días en UCI"),
+  crear_fila_kw(pacientes_tmn_4dias, "DIAS_HOSP", "Días de Hospitalización"),
+  crear_fila_chi_si(pacientes_tmn_4dias, "MUERTO28", "Mortalidad", niveles = c(0, 1), etiquetas = c("No", "Sí"), categoria_mostrar = "Sí")
+)
+
+tabla_univariante_calorias[is.na(tabla_univariante_calorias)] <- "-"
+
+tabla_univariante_calorias <- tabla_univariante_calorias %>% mutate(p_num = suppressWarnings(as.numeric(ifelse(p == "<0.001", "0.0009", p))), p = case_when(!is.na(p_num) & p_num <= 0.05 ~ paste0("<b><u>", p, "</u></b>"), !is.na(p_num) & p_num <= 0.10 ~ paste0("<b>", p, "</b>"), TRUE ~ p)) %>% select(-p_num) %>% rename(!!nombre_hipo := Hipoalimentados, !!nombre_normo := Normoalimentados, !!nombre_sobre := Sobrealimentados)
+
+knitr::kable(tabla_univariante_calorias, escape = FALSE)
+```
+
+El análisis univariante mostró diferencias estadísticamente significativas entre los grupos de adecuación calórica en el **IMC** (**p < 0,001**), con **valores progresivamente menores desde los pacientes hipoalimentados hasta los sobrealimentados**. También se observaron diferencias en el antecedente de **neoplasia** (**p = 0,009**), más **frecuente en los grupos normoalimentado y sobrealimentado**; en el **tipo de paciente** (**p = 0,019**), con **mayor proporción de pacientes quirúrgicos en el grupo sobrealimentado y mayor proporción de pacientes médicos en el grupo hipoalimentado**; y en el **riesgo nutricional según VGS** (**p = 0,004**), que **aumentó progresivamente desde los hipoalimentados hasta los sobrealimentados**.
+
+Asimismo, se observaron diferencias significativas en el **tipo de soporte nutricional** (**p < 0,001**), con **predominio de nutrición enteral exclusiva entre los pacientes hipoalimentados y mayor uso de nutrición parenteral o soporte mixto en los pacientes sobrealimentados**. La **media de aporte proteico** también **aumentó de forma paralela al aporte calórico** (**p < 0,001**), hallazgo esperable por la relación entre la intensidad global del soporte nutricional y el aporte de macronutrientes. La **ventilación mecánica** fue **más frecuente en los grupos hipoalimentado y normoalimentado** que en el grupo sobrealimentado (**p < 0,001**).
+
+Además, se observaron asociaciones de carácter exploratorio para SOFA al ingreso (p = 0,094), sexo (p = 0,066), riesgo nutricional según NUTRIC Score (p = 0,090), momento de inicio de la terapia nutricional (p = 0,083), residuo gástrico elevado (p = 0,083) y vómitos (p = 0,058). No se observaron diferencias estadísticamente significativas en la mortalidad a 28 días entre los tres grupos en este análisis no ajustado (p = 0,799).
+
+##### **Comparaciones post-hoc por pares entre grupos calóricos mediante análisis de Bonferroni**
+
+Se realizó un análisis post-hoc para identificar entre qué grupos concretos se localizaban las diferencias observadas en el análisis univariante global. Para ello, se seleccionaron las variables con una asociación potencialmente relevante con el grupo calórico —valor **p < 0,10**— y se efectuaron comparaciones por pares entre los tres grupos de adecuación calórica: hipoalimentados, normoalimentados y sobrealimentados. 
+
+- En las **variables cuantitativas asimétricas** se aplicó la **prueba de Wilcoxon por pares con corrección de Bonferroni**.
+
+- En las **variables cuantitativas con distribución normal** se utilizaron **comparaciones t por pares con ajuste de Bonferroni**.
+
+- En las **variables categóricas** se realizaron comparaciones por pares mediante **chi-cuadrado**, **ajustando posteriormente los valores p con Bonferroni**.
+
+Esta corrección permite controlar el incremento del error tipo I derivado de la realización de múltiples comparaciones. No obstante, en las variables categóricas con frecuencias esperadas bajas, los resultados deben interpretarse con cautela por la posible inestabilidad del contraste estadístico.
+
+Para facilitar la interpretación visual de la tabla, los valores p ≤ 0,05 se resaltaron en negrita y subrayado, mientras que los valores p entre 0,05 y 0,10 se mostraron en negrita, señalando asociaciones estadísticamente significativas o potencialmente relevantes desde un punto de vista exploratorio.
+
+```{r bonferroni analysis kcal}
+# Nombres cortos
+pacientes_tmn_4dias <- pacientes_tmn_4dias %>% mutate(Grupo_Calorico_simple = recode(Grupo_Calorico_D4, "1. Hipoalimentados (< 20 kcal/kg)" = "Hipo", "2. Normoalimentados (20-30 kcal/kg)" = "Normo", "3. Sobrealimentados (> 30 kcal/kg)" = "Sobre"))
+
+# Función de Formato Dinámico para la 'p'
+formatear_p_posthoc <- function(p) {
+  # Usamos sprintf en lugar de round para asegurar que siempre haya 3 decimales (ej. 0.150 en vez de 0.15)
+  p_txt <- ifelse(p < 0.001, "<0.001", sprintf("%.3f", p)) 
+  case_when(p <= 0.05 ~ paste0("**<u>", p_txt, "</u>**"), # Menor o igual a 0.05: Negrita y Subrayado
+    p <= 0.10 ~ paste0("**", p_txt, "**"), # Entre 0.05 y 0.10: Solo Negrita
+    TRUE ~ p_txt)} # Mayor a 0.10: Texto normal
+
+# Función Post-Hoc para variables asimétricas
+posthoc_kw <- function(data, variable, nombre) {
+  pairwise.wilcox.test(data[[variable]], data$Grupo_Calorico_simple, p.adjust.method = "bonferroni")$p.value %>% as.data.frame.table() %>% filter(!is.na(Freq)) %>% mutate(Variable = nombre, Comparacion = paste(Var1, "vs", Var2), p_adj = formatear_p_posthoc(Freq)) %>% select(Variable, Comparacion, p_adj)}
+
+# Función Post-Hoc para variables normales
+posthoc_anova <- function(data, variable, nombre) {
+  pairwise.t.test(data[[variable]], data$Grupo_Calorico_simple, p.adjust.method = "bonferroni")$p.value %>% as.data.frame.table() %>% filter(!is.na(Freq)) %>% mutate(Variable = nombre, Comparacion = paste(Var1, "vs", Var2), p_adj = formatear_p_posthoc(Freq)) %>% select(Variable, Comparacion, p_adj)}
+
+# 4. Función Post-Hoc para variables categóricas o binarias
+posthoc_cat <- function(data, variable, nombre, niveles) {
+  data_cat <- data %>% filter(!is.na(.data[[variable]]), !is.na(Grupo_Calorico_simple)) %>% mutate(var_cat = factor(.data[[variable]], levels = niveles))
+  lapply(combn(unique(data_cat$Grupo_Calorico_simple), 2, simplify = FALSE), function(c) data.frame(Variable = nombre, Comparacion = paste(c[1], "vs", c[2]), p = chisq.test(table((data_cat %>% filter(Grupo_Calorico_simple %in% c))$var_cat, (data_cat %>% filter(Grupo_Calorico_simple %in% c))$Grupo_Calorico_simple))$p.value)) %>% bind_rows() %>% mutate(p_Bonf = p.adjust(p, method = "bonferroni"), p_adj = formatear_p_posthoc(p_Bonf)) %>% select(Variable, Comparacion, p_adj)}
+
+# 5. Construcción de la tabla post-hoc
+tabla_bonferroni <- bind_rows(
+  posthoc_kw(pacientes_tmn_4dias, "BMI", "BMI, kg/m²"),
+  posthoc_kw(pacientes_tmn_4dias, "SOFA1", "SOFA Admisión"),
+  posthoc_cat(pacientes_tmn_4dias, "SEXO", "Sexo", niveles = c(1, 2)),
+  posthoc_cat(pacientes_tmn_4dias, "ANEOPLAS", "Antecedentes Neoplasia", niveles = c(0, 1)),
+  posthoc_cat(pacientes_tmn_4dias, "STATUS3", "Tipo de Paciente", niveles = c(0, 1, 2)),
+  posthoc_cat(pacientes_tmn_4dias, "VGSING2", "Paciente con RN basado en VGS", niveles = c(1, 2)),
+  posthoc_cat(pacientes_tmn_4dias, "NUTRISCOR2", "Paciente con RN basado en NUTRIC Score", niveles = c(0, 1)),
+  posthoc_kw(pacientes_tmn_4dias, "HORASIN", "Momento Inicio Terapia"),
+  posthoc_cat(pacientes_tmn_4dias, "TIPO_SN_Grupo", "Tipo de Soporte Nutricional", niveles = c(1, 2, 3, 4)),
+  posthoc_anova(pacientes_tmn_4dias, "gPROT_14d", "Media g proteína/kg/día"),
+  posthoc_cat(pacientes_tmn_4dias, "PVRGM100", "Volumen de Residuo Gástrico Alto", niveles = c(0, 1)),
+  posthoc_cat(pacientes_tmn_4dias, "PVOMITO", "Vómitos", niveles = c(0, 1)),
+  posthoc_cat(pacientes_tmn_4dias, "VM", "Ventilación Mecánica", niveles = c(0, 1)))
+
+# Imprimir la tabla permitiendo que se lean los códigos de negrita y subrayado
+knitr::kable(tabla_bonferroni, escape = FALSE)
+```
+
+En el análisis post-hoc, tras la corrección de Bonferroni, las diferencias más consistentes entre los grupos se concentraron en el **IMC**, la **media de aporte proteico**, el **tipo de soporte nutricional**, la **ventilación mecánica**, el **tipo de paciente**, el antecedente de **neoplasia** y el **riesgo nutricional según VGS**.
+
+El **IMC** fue significativamente diferente en todas las comparaciones por pares, con **valores progresivamente menores desde los pacientes hipoalimentados hasta los sobrealimentados**. La **media de proteína/kg/día** también difirió de forma significativa entre los tres grupos, **aumentando progresivamente desde los hipoalimentados hasta los sobrealimentados**, lo que refleja la relación esperable entre la intensidad global del soporte nutricional y el aporte de macronutrientes.
+
+Las diferencias en la distribución del **tipo de soporte nutricional** se observaron principalmente **entre hipoalimentados y normoalimentados**, y de forma **más marcada entre hipoalimentados y sobrealimentados**. Este resultado sugiere un patrón distinto de administración nutricional según la categoría calórica, con **mayor presencia relativa de nutrición parenteral o soporte mixto en los pacientes sobrealimentados**.
+
+Asimismo, la **ventilación mecánica** fue significativamente **menos frecuente en los pacientes sobrealimentados que en los normoalimentados y los hipoalimentados**. Las diferencias en el **tipo de paciente** y en el **riesgo nutricional según VGS** se localizaron fundamentalmente **entre sobrealimentados e hipoalimentados**, mientras que el antecedente de **neoplasia** diferenció sobre todo a los **normoalimentados frente a los hipoalimentados**.
+
+En conjunto, el análisis sugiere que, en esta cohorte, los pacientes sobrealimentados constituyen un subgrupo con características clínicas diferenciales. No obstante, esta interpretación debe considerarse exploratoria y prudente, dado el reducido tamaño muestral del grupo sobrealimentado.
+
+#### **Análisis multivariante: Adecuación calórica**
+
+##### **Regresión logística multinomial**
+
+Se construyó un modelo de regresión logística multinomial tomando como variable dependiente la categoría de adecuación calórica al cuarto día de soporte nutricional, con el grupo normoalimentado como categoría de referencia. A partir de las variables que habían mostrado diferencias significativas en el análisis post-hoc, se evaluaron distintas combinaciones de predictores, comparando los modelos mediante criterios complementarios de ajuste y rendimiento: AIC, AUC multiclase, número de variables incluidas y número de asociaciones significativas o con tendencia.
+
+Posteriormente, se seleccionó el modelo con mejor equilibrio entre ajuste, capacidad discriminativa aparente y parsimonia. Dado el carácter exploratorio del procedimiento de selección y la ausencia de validación interna, los resultados deben interpretarse como un análisis de caracterización clínica y nutricional de los grupos calóricos, más que como un modelo predictivo definitivo. Asimismo, las variables evolutivas de aporte nutricional deben interpretarse con cautela cuando incluyen información posterior al momento de clasificación del desenlace.
+
+```{r}
+library(dplyr); library(tidyr); library(nnet); library(broom); library(pROC); library(purrr); library(knitr)
+
+# 1. Preparación de la base de datos
+# Categoría de referencia: Normoalimentados
+datos_modelos <- pacientes_tmn_4dias %>% mutate(Grupo_Calorico_modelo = factor(Grupo_Calorico_D4, levels = c("2. Normoalimentados (20-30 kcal/kg)", "1. Hipoalimentados (< 20 kcal/kg)", "3. Sobrealimentados (> 30 kcal/kg)"), labels = c("Normo", "Hipo", "Sobre")), STATUS3 = factor(STATUS3, levels = 0:2, labels = c("Quirúrgico", "Médico", "Trauma")), VGSING2 = factor(VGSING2, levels = 1:2, labels = c("No", "Sí")), ANEOPLAS = factor(ANEOPLAS, levels = 0:1, labels = c("No", "Sí")), VM = factor(VM, levels = 0:1, labels = c("No", "Sí")), TIPO_SN_simple = factor(case_when(TIPO_SN_Grupo == 1 ~ "NE exclusiva", TIPO_SN_Grupo %in% 2:4 ~ "Con NPT", TRUE ~ NA_character_), levels = c("NE exclusiva", "Con NPT"))) %>% drop_na(Grupo_Calorico_modelo, BMI, ANEOPLAS, STATUS3, VGSING2, TIPO_SN_simple, gPROT_14d, VM)
+
+# 2. Variables candidatas
+# Solo se incluyen variables con diferencias significativas en el post-hoc de Bonferroni
+variables_candidatas <- c("BMI", "ANEOPLAS", "STATUS3", "VGSING2", "TIPO_SN_simple", "gPROT_14d", "VM")
+
+# 3. Función de evaluación
+# Ajusta el modelo, calcula AIC, AUC multiclase y número de asociaciones relevantes
+evaluar_modelo <- function(vars, data) {tryCatch({modelo <- multinom(as.formula(paste("Grupo_Calorico_modelo ~", paste(vars, collapse = "+"))), data = data, trace = FALSE)
+    p_vals <- tidy(modelo) %>% filter(term != "(Intercept)") %>% mutate(p = 2 * pnorm(-abs(statistic)))
+    data.frame(Variables = paste(vars, collapse = " + "), Num_variables = length(vars), AIC = AIC(modelo), AUC_multiclase = as.numeric(multiclass.roc(data$Grupo_Calorico_modelo, predict(modelo, type = "probs"))$auc), N_significativas = sum(p_vals$p <= 0.05, na.rm = TRUE), N_tendencia = sum(p_vals$p <= 0.10, na.rm = TRUE))}, error = function(e) NULL)}
+
+# 4. Crear combinaciones posibles de 2 a 6 variables: Límite máximo de seis predictores para reducir sobreajuste
+combinaciones <- unlist(lapply(2:6, function(k) combn(variables_candidatas, k, simplify = FALSE)), recursive = FALSE)
+length(combinaciones)
+
+# 5. Ejecutar evaluación masiva de modelos
+resultados_modelos <- map_dfr(combinaciones, evaluar_modelo, data = datos_modelos)
+
+# 6. Top 15 mejores modelos por AIC
+resultados_modelos %>% arrange(AIC) %>% slice(1:15) %>% kable(digits = 3, caption = "Top 15 modelos multinomiales según menor AIC")
+
+# 7. Top 15 mejores modelos por AUC multiclase
+resultados_modelos %>% arrange(desc(AUC_multiclase)) %>% slice(1:15) %>% kable(digits = 3, caption = "Top 15 modelos multinomiales según mayor AUC")
+
+# 8. Ranking equilibrado: AIC + AUC + parsimonia
+mejores_eq <- resultados_modelos %>% mutate(rank_comb = rank(AIC) + rank(-AUC_multiclase) + Num_variables) %>% arrange(rank_comb) %>% slice(1:15)
+
+knitr::kable(mejores_eq, digits = 3, caption = "Top 15 modelos: equilibrio AIC, AUC y parsimonia")
+
+# 9. Extraer fórmula ganadora
+mejor_formula <- mejores_eq$Variables[1]
+
+# 10. Ajuste del modelo ganador
+modelo_final_auto <- multinom(as.formula(paste("Grupo_Calorico_modelo ~", mejor_formula)), data = datos_modelos, trace = FALSE)
+
+# 11. Tabla de resultados del modelo final
+tidy(modelo_final_auto, conf.int = TRUE, exponentiate = TRUE) %>% filter(term != "(Intercept)") %>% mutate(p_calc = 2 * pnorm(-abs(statistic)), p = ifelse(p_calc < 0.001, "<0.001", sprintf("%.3f", p_calc)), OR_IC95 = sprintf("%.2f [%.2f - %.2f]", estimate, conf.low, conf.high), Comparacion = recode(y.level, "Hipo" = "Hipoalimentados vs normoalimentados", "Sobre" = "Sobrealimentados vs normoalimentados"), Variable = recode(term, "BMI" = "BMI", "ANEOPLASSí" = "Antecedentes de neoplasia", "STATUS3Médico" = "Paciente médico vs quirúrgico", "STATUS3Trauma" = "Paciente trauma vs quirúrgico", "VGSING2Sí" = "Riesgo nutricional por VGS", "TIPO_SN_simpleCon NPT" = "Soporte con NPT vs NE exclusiva", "gPROT_14d" = "Media g proteína/kg/día", "VMSí" = "Ventilación mecánica")) %>% select(Comparacion, Variable, OR_IC95, p) %>% knitr::kable(caption = "Modelo multinomial final. Categoría de referencia: normoalimentados")
+
+# 12. Métricas del modelo final
+mejores_eq %>% slice(1) %>% select(Variables, Num_variables, AIC, AUC_multiclase, N_significativas, N_tendencia) %>% knitr::kable(digits = 3, caption = "Métricas del modelo final")
+```
+
+El modelo multinomial seleccionado incluyó el **IMC**, el **tipo de paciente**, la **media de aporte proteico** y la **ventilación mecánica**, y mostró una capacidad discriminativa aparente moderada, con un **AUC multiclase de 0,728**.
+
+Frente a los pacientes normoalimentados, la **hipoalimentación** se asoció de forma independiente con el tipo de paciente, especialmente en **pacientes médicos frente a quirúrgicos** —**OR 1,69**; IC95% 1,02–2,81; **p = 0,043**—, y con una **menor media de aporte proteico** —**OR 0,09**; IC95% 0,04–0,19; **p < 0,001**—. Los **pacientes traumáticos** también mostraron una mayor probabilidad de hipoalimentación frente a los quirúrgicos, aunque esta asociación no alcanzó significación estadística convencional —OR 1,89; IC95% 0,93–3,87; p = 0,079—.
+
+Por el contrario, la **sobrealimentación** se asoció con una **mayor media de aporte proteico** —**OR 8,90**; IC95% 2,23–35,47; **p = 0,002**— y con una **menor probabilidad de ventilación mecánica** —**OR 0,31**; IC95% 0,12–0,83; **p = 0,019**—. El IMC permaneció en el modelo por su contribución al equilibrio global entre AIC, AUC y parsimonia, aunque no alcanzó significación estadística independiente en ninguna de las comparaciones.
+
+En conjunto, el modelo sugiere que los patrones de adecuación calórica no dependen únicamente del aporte energético aislado, sino que se relacionan con el perfil clínico del paciente, la modalidad e intensidad global del soporte nutricional y la presencia de soporte ventilatorio. No obstante, estos resultados deben interpretarse con prudencia por el carácter exploratorio del modelo, el reducido tamaño del grupo sobrealimentado y la posible influencia de variables nutricionales evolutivas incluidas en el ajuste.
+
+```{r}
+# Curvas ROC one-vs-rest del modelo multinomial final
+library(dplyr); library(tidyr); library(pROC); library(ggplot2); library(knitr)
+
+# 1. Obtener probabilidades predichas del modelo multinomial final
+prob_multinom <- predict(modelo_final_auto, newdata = datos_modelos, type = "probs")
+
+# 2. Crear base para ROC
+datos_roc_multinom <- as.data.frame(prob_multinom) %>% mutate(Grupo_real = datos_modelos$Grupo_Calorico_modelo)
+
+# 4. Calcular AUC multiclase global
+auc_multiclase_final <- as.numeric(multiclass.roc(response = datos_roc_multinom$Grupo_real, predictor = as.matrix(datos_roc_multinom[, c("Normo", "Hipo", "Sobre")]))$auc)
+
+# 5. Función para crear curvas ROC one-vs-rest
+crear_roc_ovr <- function(data, clase, prob_col) {
+  respuesta_binaria <- ifelse(data$Grupo_real == clase, 1, 0)
+  roc_obj <- roc(response = respuesta_binaria, predictor = data[[prob_col]], quiet = TRUE)
+  coords(roc_obj, x = "all", ret = c("specificity", "sensitivity"), transpose = FALSE) %>% as.data.frame() %>% mutate(Clase = clase, AUC = as.numeric(auc(roc_obj)), FPR = 1 - specificity)}
+
+# 6. Crear curvas ROC para cada categoría
+roc_normo <- crear_roc_ovr(data = datos_roc_multinom, clase = "Normo", prob_col = "Normo")
+roc_hipo <- crear_roc_ovr(data = datos_roc_multinom, clase = "Hipo", prob_col = "Hipo")
+roc_sobre <- crear_roc_ovr(data = datos_roc_multinom, clase = "Sobre", prob_col = "Sobre")
+
+# 7. Unir curvas en un único data.frame
+df_roc_multinom <- bind_rows(roc_normo, roc_hipo, roc_sobre)
+
+# 8. Tabla resumen de AUC one-vs-rest por categoría
+tabla_auc_ovr <- df_roc_multinom %>% group_by(Clase) %>% summarise(AUC = unique(round(AUC, 3)), .groups = "drop") %>% arrange(match(Clase, c("Hipo", "Normo", "Sobre")))
+
+# 9. Crear etiquetas con AUC para la leyenda
+auc_labels <- tabla_auc_ovr %>% mutate(Clase_label = paste0(Clase, " (AUC = ", sprintf("%.3f", AUC), ")"))
+df_roc_multinom_label <- df_roc_multinom %>% left_join(auc_labels, by = "Clase") %>% mutate(Clase_label = factor(Clase_label, levels = auc_labels$Clase_label))
+
+# 10. Gráfico ROC conjunto
+grafico_roc_multinom <- ggplot(df_roc_multinom_label, aes(x = FPR, y = sensitivity, color = Clase_label)) + geom_line(linewidth = 1.2) + geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "gray50") + coord_equal() + scale_x_continuous(limits = c(0, 1), breaks = seq(0, 1, by = 0.2)) + scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, by = 0.2)) + labs(title = "Rendimiento discriminativo aparente del modelo multinomial", subtitle = paste0("AUC multiclase aparente = ", sprintf("%.3f", auc_multiclase_final)), x = "1 - Especificidad", y = "Sensibilidad", color = "Categoría") + theme_minimal() + theme(plot.title = element_text(face = "bold", hjust = 0.5, size = 13), plot.subtitle = element_text(hjust = 0.5, size = 11), axis.title = element_text(face = "bold"), legend.position = "bottom", legend.title = element_text(face = "bold"), panel.grid.minor = element_blank())
+
+print(grafico_roc_multinom)
+```
+
+El modelo muestra una **capacidad discriminativa aparente moderada**, con **AUC multiclase = 0,728**. Al analizar las curvas one-vs-rest, la discriminación es mejor para identificar a los **sobrealimentados** frente al resto —**AUC = 0,836**—, aceptable para los **hipoalimentados** —**AUC = 0,743**— y más limitada para los **normoalimentados** —**AUC = 0,666**—. Esto sugiere que el modelo distingue mejor los perfiles extremos de inadecuación calórica, especialmente la sobrealimentación, que el grupo intermedio de normoalimentación.
+
+##### **Regresión de Cox**
+
+Se realizaron **modelos de regresión de Cox exploratorios** para evaluar los factores asociados a la pertenencia a los grupos de inadecuación calórica, utilizando como tiempo de seguimiento la **estancia en UCI** (`DIAS_UCI`). Se construyeron dos análisis independientes: el primero comparó pacientes **hipoalimentados frente a normoalimentados**, codificando como **evento** la **pertenencia al grupo de hipoalimentación**; el segundo comparó pacientes **sobrealimentados frente a normoalimentados**, codificando como **evento** la **pertenencia al grupo de sobrealimentación**.
+
+Para seguir una estrategia análoga a la utilizada en la regresión logística multinomial, se seleccionaron como variables candidatas aquellas que habían mostrado diferencias significativas en las comparaciones post-hoc corregidas por Bonferroni para cada comparación específica. A partir de estas variables, se evaluaron todas las combinaciones posibles de 2 a 5 predictores, comparando los modelos mediante criterios complementarios: AIC, concordancia, número de variables incluidas, número de asociaciones significativas o con tendencia y cumplimiento global del supuesto de riesgos proporcionales.
+
+Posteriormente, se seleccionó el modelo con mejor equilibrio entre ajuste, capacidad discriminativa aparente, parsimonia y estabilidad del supuesto de riesgos proporcionales. Dado el carácter exploratorio del análisis y la naturaleza transversal de la clasificación calórica al cuarto día, estos modelos deben interpretarse como análisis complementarios de asociación, no como modelos pronósticos definitivos.
+
+```{r}
+library(dplyr); library(tidyr); library(survival); library(broom); library(purrr); library(knitr)
+
+# 1. Preparación común de variables
+datos_cox <- pacientes_tmn_4dias %>% mutate(Grupo_Calorico_modelo = factor(Grupo_Calorico_D4, levels = c("2. Normoalimentados (20-30 kcal/kg)", "1. Hipoalimentados (< 20 kcal/kg)", "3. Sobrealimentados (> 30 kcal/kg)"), labels = c("Normo", "Hipo", "Sobre")), ANEOPLAS = factor(ANEOPLAS, levels = c(0, 1), labels = c("No", "Sí")), VM = factor(VM, levels = c(0, 1), labels = c("No", "Sí")), TIPO_SN_simple = factor(case_when(TIPO_SN_Grupo == 1 ~ "NE exclusiva", TIPO_SN_Grupo %in% 2:4 ~ "Con NPT", TRUE ~ NA_character_), levels = c("NE exclusiva", "Con NPT")), STATUS3 = factor(STATUS3, levels = c(0, 1, 2), labels = c("Quirúrgico", "Médico", "Trauma")), VGSING2 = factor(VGSING2, levels = c(1, 2), labels = c("No", "Sí")), NUTRISCOR2 = factor(NUTRISCOR2, levels = c(0, 1), labels = c("No", "Sí")))
+
+# Modelo 1: Hipoalimentados vs. Normoalimentados
+# 2. Base Hipo vs Normo
+datos_cox_hipo <- datos_cox %>% filter(Grupo_Calorico_modelo %in% c("Normo", "Hipo")) %>% mutate(Evento_Hipo = ifelse(Grupo_Calorico_modelo == "Hipo", 1, 0))
+
+# Variables candidatas según Bonferroni: significativas y tendencia exploratoria
+variables_hipo <- c("BMI", "ANEOPLAS", "TIPO_SN_simple", "gPROT_14d", "HORASIN")
+
+# 3. Función para evaluar modelos Cox
+evaluar_cox <- function(vars, data, evento) {tryCatch({data_modelo <- data %>% select(all_of(c("DIAS_UCI", evento, vars))) %>% drop_na()
+    modelo <- coxph(as.formula(paste0("Surv(DIAS_UCI, ", evento, ") ~ ", paste(vars, collapse = " + "))), data = data_modelo)
+    resumen <- tidy(modelo, exponentiate = TRUE, conf.int = TRUE); p_global_ph <- cox.zph(modelo)$table["GLOBAL", "p"]
+    data.frame(Variables = paste(vars, collapse = " + "), Num_variables = length(vars), N = nrow(data_modelo), Eventos = sum(data_modelo[[evento]] == 1, na.rm = TRUE), AIC = AIC(modelo), Concordancia = summary(modelo)$concordance[1], N_significativas = sum(resumen$p.value <= 0.05, na.rm = TRUE), N_tendencia = sum(resumen$p.value <= 0.10, na.rm = TRUE), PH_global_p = p_global_ph, PH_ok = ifelse(p_global_ph > 0.05, "Sí", "No"))}, error = function(e) NULL)}
+
+# 4. Generar combinaciones de 2 a 5 variables
+max_vars_hipo <- min(5, length(variables_hipo))
+combinaciones_hipo <- unlist(lapply(2:max_vars_hipo, function(k) combn(variables_hipo, k, simplify = FALSE)), recursive = FALSE)
+length(combinaciones_hipo)
+```
+
+Para la comparación entre hipoalimentados y normoalimentados se generaron 26 modelos Cox candidatos, combinando entre 2 y 5 variables previamente identificadas en el análisis post-hoc como significativas o potencialmente relevantes.
+
+```{r}
+# 5. Evaluar todos los modelos Hipo vs Normo
+resultados_cox_hipo <- map_dfr(combinaciones_hipo, evaluar_cox, data = datos_cox_hipo, evento = "Evento_Hipo")
+
+# Top modelos por AIC
+resultados_cox_hipo %>% arrange(AIC) %>% slice(1:15) %>% kable(digits = 3, caption = "Top modelos Cox Hipo vs Normo según menor AIC")
+
+# Top modelos por concordancia
+resultados_cox_hipo %>% arrange(desc(Concordancia)) %>% slice(1:15) %>% kable(digits = 3, caption = "Top modelos Cox Hipo vs Normo según mayor concordancia")
+
+# Ranking equilibrado
+mejores_cox_hipo <- resultados_cox_hipo %>% mutate(penalizacion_PH = ifelse(PH_ok == "Sí", 0, 10), rank_comb = rank(AIC) + rank(-Concordancia) + Num_variables + penalizacion_PH) %>% arrange(rank_comb, Num_variables, AIC) %>% slice(1:15)
+mejores_cox_hipo %>% kable(digits = 3, caption = "Top modelos Cox Hipo vs Normo: equilibrio AIC, concordancia, parsimonia y PH")
+```
+
+En la comparación entre hipoalimentados y normoalimentados, el ranking equilibrado identificó como modelo más adecuado el compuesto por **BMI y media de proteína/kg/día**. Aunque el modelo que añadía el momento de inicio de la terapia nutricional presentó una concordancia ligeramente superior, la ganancia fue mínima y se acompañó de mayor complejidad y AIC ligeramente más elevado. Por ello, se seleccionó el modelo de dos variables como opción más parsimoniosa, con concordancia aparente de **0,677** y cumplimiento global aceptable del supuesto de riesgos proporcionales.
+
+```{r}
+# Modelo 2: Sobrealimentados vs. Normoalimentados
+# 6. Base Sobre vs Normo
+datos_cox_sobre <- datos_cox %>% filter(Grupo_Calorico_modelo %in% c("Normo", "Sobre")) %>% mutate(Evento_Sobre = ifelse(Grupo_Calorico_modelo == "Sobre", 1, 0))
+variables_sobre <- c("BMI", "gPROT_14d", "VM")
+
+# 7. Generar combinaciones para Sobre vs Normo
+max_vars_sobre <- min(5, length(variables_sobre))
+combinaciones_sobre <- unlist(lapply(2:max_vars_sobre, function(k) combn(variables_sobre, k, simplify = FALSE)), recursive = FALSE)
+length(combinaciones_sobre)
+```
+
+Para la comparación entre sobrealimentados y normoalimentados se identificaron tres variables candidatas procedentes del análisis post-hoc: **BMI, media de proteína/kg/día y ventilación mecánica**. A partir de ellas se generaron **cuatro modelos** Cox posibles, combinando predictores de dos y tres variables.
+
+```{r}
+# 8. Evaluar todos los modelos Sobre vs Normo
+resultados_cox_sobre <- map_dfr(combinaciones_sobre, evaluar_cox, data = datos_cox_sobre, evento = "Evento_Sobre")
+
+# Top modelos por AIC
+resultados_cox_sobre %>% arrange(AIC) %>% slice(1:15) %>% kable(digits = 3, caption = "Top modelos Cox Sobre vs Normo según menor AIC")
+
+# Top modelos por concordancia
+resultados_cox_sobre %>% arrange(desc(Concordancia)) %>% slice(1:15) %>% kable(digits = 3, caption = "Top modelos Cox Sobre vs Normo según mayor concordancia")
+
+# Ranking equilibrado
+mejores_cox_sobre <- resultados_cox_sobre %>% mutate(penalizacion_PH = ifelse(PH_ok == "Sí", 0, 10), rank_comb = rank(AIC) + rank(-Concordancia) + Num_variables + penalizacion_PH) %>% arrange(rank_comb) %>% slice(1:15)
+mejores_cox_sobre %>% kable(digits = 3, caption = "Top modelos Cox Sobre vs Normo: equilibrio AIC, concordancia, parsimonia y PH")
+```
+
+El ranking equilibrado confirma de forma clara que el modelo más adecuado para **sobrealimentados vs normoalimentados** es **gPROT_14d + VM**. Este modelo combina el menor AIC, la mayor concordancia aparente —0,790—, dos asociaciones relevantes y cumplimiento global aceptable del supuesto de riesgos proporcionales. Los modelos que incluyen `BMI` quedan peor posicionados: o bien tienen menor capacidad discriminativa, o bien incumplen el supuesto de proporcionalidad. Por tanto, la selección final queda bien justificada y no cambiaría nada del código.
+
+```{r}
+# 9. Extraer fórmulas ganadoras
+mejor_formula_hipo <- mejores_cox_hipo$Variables[1]; mejor_formula_sobre <- mejores_cox_sobre$Variables[1]
+mejor_formula_hipo; mejor_formula_sobre
+
+# 10. Ajustar modelos finales
+modelo_cox_hipo_final <- coxph(as.formula(paste0("Surv(DIAS_UCI, Evento_Hipo) ~ ", mejor_formula_hipo)), data = datos_cox_hipo %>% select(DIAS_UCI, Evento_Hipo, all_of(strsplit(mejor_formula_hipo, " \\+ ")[[1]])) %>% drop_na())
+modelo_cox_sobre_final <- coxph(as.formula(paste0("Surv(DIAS_UCI, Evento_Sobre) ~ ", mejor_formula_sobre)), data = datos_cox_sobre %>% select(DIAS_UCI, Evento_Sobre, all_of(strsplit(mejor_formula_sobre, " \\+ ")[[1]])) %>% drop_na())
+
+# 11. Tabla resumen de modelos finales
+tabla_cox_final <- bind_rows(tidy(modelo_cox_hipo_final, exponentiate = TRUE, conf.int = TRUE) %>% mutate(Modelo = "Hipoalimentados vs normoalimentados"), tidy(modelo_cox_sobre_final, exponentiate = TRUE, conf.int = TRUE) %>% mutate(Modelo = "Sobrealimentados vs normoalimentados")) %>% mutate(HR_IC95 = sprintf("%.2f [%.2f - %.2f]", estimate, conf.low, conf.high), p = ifelse(p.value < 0.001, "<0.001", sprintf("%.3f", p.value)), Variable = recode(term, "BMI" = "BMI", "ANEOPLASSí" = "Antecedentes de neoplasia", "TIPO_SN_simpleCon NPT" = "Soporte con NPT vs NE exclusiva", "gPROT_14d" = "Media g proteína/kg/día", "VMSí" = "Ventilación mecánica", "STATUS3Médico" = "Paciente médico vs quirúrgico", "STATUS3Trauma" = "Paciente trauma vs quirúrgico", "VGSING2Sí" = "Riesgo nutricional por VGS", "NUTRISCOR2Sí" = "Riesgo nutricional por NUTRIC Score", "HORASIN" = "Momento de inicio de terapia")) %>% select(Modelo, Variable, HR_IC95, p)
+kable(tabla_cox_final, caption = "Modelos de Cox finales para pertenencia a grupos de inadecuación calórica usando DIAS_UCI como tiempo")
+
+# 12. Métricas de modelos finales
+metricas_finales_cox <- bind_rows(mejores_cox_hipo %>% slice(1) %>% mutate(Modelo = "Hipoalimentados vs normoalimentados"), mejores_cox_sobre %>% slice(1) %>% mutate(Modelo = "Sobrealimentados vs normoalimentados")) %>% select(Modelo, Variables, Num_variables, N, Eventos, AIC, Concordancia, N_significativas, N_tendencia, PH_global_p, PH_ok)
+kable(metricas_finales_cox, digits = 3, caption = "Métricas de los modelos Cox finales")
+
+# 13. Supuesto de riesgos proporcionales
+test_ph_hipo_final <- cox.zph(modelo_cox_hipo_final); test_ph_sobre_final <- cox.zph(modelo_cox_sobre_final)
+test_ph_hipo_final; test_ph_sobre_final
+```
+
+Para **hipoalimentados vs normoalimentados**, el modelo final incluyó **BMI + media de proteína/kg/día**, con concordancia aparente moderada (**0,677**) y cumplimiento global aceptable del supuesto de riesgos proporcionales (**p global = 0,074**). En este modelo, la media de proteína/kg/día fue el único predictor claramente significativo, con una asociación inversa marcada con la hipoalimentación (**HR 0,16; IC95% 0,10–0,25; p < 0,001**), mientras que el BMI mostró solo una tendencia débil (**HR 0,98; p = 0,074**). Para **sobrealimentados vs normoalimentados**, el modelo final incluyó **media de proteína/kg/día + ventilación mecánica**, con mejor concordancia aparente (**0,790**) y cumplimiento global aceptable del supuesto de proporcionalidad (**p global = 0,065**); en este caso, mayor aporte proteico se asoció fuertemente con sobrealimentación (**HR 9,24; p < 0,001**) y la ventilación mecánica se asoció de forma inversa (**HR 0,13; p < 0,001**).
+
+Es necesario comentar que en el modelo de hipoalimentación `gPROT_14d` incumple individualmente el supuesto de proporcionalidad (**p = 0,034**), aunque el test global sea aceptable. En el modelo de sobrealimentación, `VM` queda cerca del umbral (**p = 0,063**), por lo que también conviene mantener una interpretación exploratoria.
+
+```{r}
+# Curvas ROC del score lineal de los modelos Cox finales
+library(dplyr); library(pROC); library(ggplot2); library(knitr)
+
+# 1. Preparar bases usadas en los modelos finales
+vars_hipo_final <- strsplit(mejor_formula_hipo, " \\+ ")[[1]]; vars_sobre_final <- strsplit(mejor_formula_sobre, " \\+ ")[[1]]
+datos_roc_cox_hipo <- datos_cox_hipo %>% select(DIAS_UCI, Evento_Hipo, all_of(vars_hipo_final)) %>% drop_na()
+datos_roc_cox_sobre <- datos_cox_sobre %>% select(DIAS_UCI, Evento_Sobre, all_of(vars_sobre_final)) %>% drop_na()
+
+# 2. Obtener score lineal de cada modelo Cox
+datos_roc_cox_hipo$score_cox <- predict(modelo_cox_hipo_final, newdata = datos_roc_cox_hipo, type = "lp")
+datos_roc_cox_sobre$score_cox <- predict(modelo_cox_sobre_final, newdata = datos_roc_cox_sobre, type = "lp")
+
+# 3. Calcular curvas ROC
+roc_cox_hipo <- roc(response = datos_roc_cox_hipo$Evento_Hipo, predictor = datos_roc_cox_hipo$score_cox, quiet = TRUE)
+roc_cox_sobre <- roc(response = datos_roc_cox_sobre$Evento_Sobre, predictor = datos_roc_cox_sobre$score_cox, quiet = TRUE)
+auc_cox_hipo <- as.numeric(auc(roc_cox_hipo)); auc_cox_sobre <- as.numeric(auc(roc_cox_sobre))
+
+# 4. Extraer coordenadas para ggplot
+df_roc_cox_hipo <- coords(roc_cox_hipo, x = "all", ret = c("specificity", "sensitivity"), transpose = FALSE) %>% as.data.frame() %>% mutate(FPR = 1 - specificity, Modelo = paste0("Hipo vs Normo (AUC = ", sprintf("%.3f", auc_cox_hipo), ")"))
+df_roc_cox_sobre <- coords(roc_cox_sobre, x = "all", ret = c("specificity", "sensitivity"), transpose = FALSE) %>% as.data.frame() %>% mutate(FPR = 1 - specificity, Modelo = paste0("Sobre vs Normo (AUC = ", sprintf("%.3f", auc_cox_sobre), ")"))
+df_roc_cox <- bind_rows(df_roc_cox_hipo, df_roc_cox_sobre)
+
+# 5. Tabla resumen de AUC
+tabla_auc_cox <- data.frame(Modelo = c("Hipoalimentados vs normoalimentados", "Sobrealimentados vs normoalimentados"), AUC = c(round(auc_cox_hipo, 3), round(auc_cox_sobre, 3)))
+
+# 6. Gráfico ROC conjunto
+grafico_roc_cox <- ggplot(df_roc_cox, aes(x = FPR, y = sensitivity, color = Modelo)) + geom_line(linewidth = 1.2) + geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "gray50") + coord_equal() + scale_x_continuous(limits = c(0, 1), breaks = seq(0, 1, by = 0.2)) + scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, by = 0.2)) + labs(title = "Rendimiento discriminativo aparente de los modelos Cox", subtitle = "Curvas ROC basadas en el score lineal", x = "1 - Especificidad", y = "Sensibilidad", color = "Modelo") + theme_minimal() + theme(plot.title = element_text(face = "bold", hjust = 0.5, size = 13), plot.subtitle = element_text(hjust = 0.5, size = 11), axis.title = element_text(face = "bold"), legend.position = "bottom", legend.title = element_text(face = "bold"), panel.grid.minor = element_blank())
+print(grafico_roc_cox)
+```
+
+Las curvas ROC construidas a partir del score lineal de los modelos Cox finales mostraron una capacidad discriminativa aparente moderada. El modelo para **hipoalimentados frente a normoalimentados** alcanzó un **AUC de 0,712**, mientras que el modelo para **sobrealimentados frente a normoalimentados** presentó un rendimiento algo superior, con un **AUC de 0,760**. Estos resultados son coherentes con las concordancias observadas en los modelos Cox finales y sugieren una mejor discriminación del perfil de sobrealimentación. No obstante, dado que las curvas se calcularon sobre la misma muestra empleada para ajustar los modelos y que el evento corresponde a la pertenencia a un grupo calórico, deben interpretarse como una evaluación exploratoria de discriminación aparente, no como validación pronóstica.
+
+#### **Mortalidad a los 28 días según grupo calórico**
+
+Se realizó un análisis de supervivencia mediante **estimación de Kaplan-Meier** para comparar la supervivencia acumulada a 28 días entre los tres grupos de adecuación calórica al cuarto día: hipoalimentados, normoalimentados y sobrealimentados. Se utilizó `ESTADA28` como variable temporal de seguimiento y `MUERTO28` como evento, codificado explícitamente como 0 = superviviente y 1 = fallecido. Las curvas se estratificaron por grupo calórico y se compararon mediante el **test de log-rank**, incorporando además la tabla de pacientes en riesgo durante el seguimiento.
+
+```{r}
+library(dplyr); library(survival); library(survminer); library(knitr)
+
+# Tiempo: ESTADA28 | Evento: MUERTO28 | Grupos: Hipo, Normo, Sobre
+
+# 1. Preparar base
+datos_km_cal <- pacientes_tmn_4dias %>% mutate(Grupo_Calorico_KM = factor(Grupo_Calorico_D4, levels = c("1. Hipoalimentados (< 20 kcal/kg)", "2. Normoalimentados (20-30 kcal/kg)", "3. Sobrealimentados (> 30 kcal/kg)"), labels = c("Hipoalimentados", "Normoalimentados", "Sobrealimentados")), Evento_Muerte28 = case_when(MUERTO28 == 1 ~ 1, MUERTO28 == 0 ~ 0, TRUE ~ NA_real_)) %>% filter(!is.na(Grupo_Calorico_KM), !is.na(ESTADA28), !is.na(Evento_Muerte28))
+
+# 2. Comprobar n y eventos por grupo
+datos_km_cal %>% group_by(Grupo_Calorico_KM) %>% summarise(n = n(), muertes_28d = sum(Evento_Muerte28 == 1, na.rm = TRUE), mortalidad_28d = round(mean(Evento_Muerte28 == 1, na.rm = TRUE) * 100, 1), .groups = "drop") %>% kable(caption = "Mortalidad a 28 días según grupo de adecuación calórica")
+
+# 3 Ajustar Kaplan-Meier y Test de log-rank
+km_cal <- survfit(Surv(ESTADA28, Evento_Muerte28) ~ Grupo_Calorico_KM, data = datos_km_cal)
+logrank_cal <- survdiff(Surv(ESTADA28, Evento_Muerte28) ~ Grupo_Calorico_KM, data = datos_km_cal)
+p_logrank <- 1 - pchisq(logrank_cal$chisq, length(logrank_cal$n) - 1); p_logrank_txt <- ifelse(p_logrank < 0.001, "<0.001", sprintf("%.3f", p_logrank))
+
+# 5. Gráfico Kaplan-Meier con los tres grupos
+ggsurvplot(km_cal, data = datos_km_cal, risk.table = TRUE, pval = paste0("Log-rank p = ", p_logrank_txt), conf.int = FALSE, censor = TRUE, xlab = "Días de seguimiento", ylab = "Supervivencia acumulada", title = "Supervivencia a 28 días según adecuación calórica", legend.title = "Grupo calórico", legend.labs = c("Hipoalimentados", "Normoalimentados", "Sobrealimentados"), break.time.by = 7, xlim = c(0, 28), risk.table.height = 0.25, ggtheme = theme_minimal())
+```
+
+La mortalidad a 28 días fue similar entre los tres grupos: **25,4%** en hipoalimentados, **28,3%** en normoalimentados y **26,5%** en sobrealimentados. Las curvas de Kaplan-Meier mostraron trayectorias muy próximas durante todo el seguimiento, sin separación consistente entre grupos. El test de log-rank no evidenció diferencias estadísticamente significativas en la supervivencia a 28 días según la categoría de adecuación calórica (**p = 0,714**), por lo que, en este análisis no ajustado, la clasificación calórica al cuarto día no se asoció con diferencias relevantes en mortalidad a 28 días.
+
+#### **Conclusión adecuación calórica**
+
+En conjunto, el análisis del componente calórico del IQ4 evidencia un **cumplimiento insuficiente de la meta energética** al cuarto día de soporte nutricional. El problema fundamental no fue el exceso de aporte calórico, sino la dificultad para alcanzar una administración energética suficiente en los primeros días.
+
+La distribución de la cohorte evaluable se divide en:
+
+- **Hipoalimentación** (**52,0%**): Constituye el patrón principal de inadecuación.
+
+- **Adecuación o Normoalimentación** (**40,7%**): Pacientes que alcanzaron el rango considerado adecuado (20-30 kcal/kg/día).
+
+- **Sobrealimentación** (**7,2%**): Patrón mucho menos frecuente.
+
+**Caracterización de los grupos calóricos**
+
+La adecuación calórica no depende exclusivamente del aporte energético aislado, sino que está estrechamente relacionada con el perfil clínico, el tipo de soporte, el aporte proteico concomitante y la presencia de ventilación mecánica (VM):
+
+- **Pacientes hipoalimentados**: Presentaron con mayor frecuencia nutrición enteral (NE) exclusiva y ventilación mecánica.
+
+- **Pacientes sobrealimentados**: Constituyeron un subgrupo pequeño pero con características diferenciales claras, incluyendo **menor IMC**, mayor riesgo nutricional (según VGS) y mayor uso de soporte **parenteral o mixto**.
+
+**Respaldos de los modelos multivariantes**
+
+Los modelos estadísticos reforzaron esta interpretación, aunque requieren cierta precaución:
+
+- **Regresión logística multinomial**: Mostró una capacidad discriminativa aparente moderada (**AUC multiclase de 0,728**), diferenciando mejor los grupos extremos de inadecuación frente al grupo normoalimentado.
+
+- **Modelos de Cox exploratorios**: Exhibieron un rendimiento discriminativo moderado, especialmente al comparar pacientes sobrealimentados frente a normoalimentados.
+
+- *Nota de prudencia*: Estos modelos deben interpretarse con cautela debido a su carácter exploratorio, la ausencia de validación interna, el reducido tamaño del grupo sobrealimentado y la inclusión de variables nutricionales evolutivas.
+
+**Auditoría clínica y oportunidades de mejora**
+
+Desde la perspectiva de calidad asistencial, la principal área de mejora del IQ4 calórico radica en la **prevención y corrección precoz de la hipoalimentación**. Esto implica:
+
+1. **Reforzar la monitorización** del aporte calórico real administrado.
+
+2. **Detectar tempranamente** a los pacientes que no progresan hacia el objetivo energético.
+
+3. **Revisar sistemáticamente** las causas de interrupción o limitación de la nutrición enteral.
+
+4. **Protocolizar estrategias de rescate** nutricional ante aportes persistentemente insuficientes.
+*La sobrealimentación, aunque secundaria por su baja frecuencia, debe mantenerse vigilada especialmente en pacientes con soporte parenteral o mixto*.
+
+**Impacto en mortalidad y relevancia del indicador**
+
+La ausencia de diferencias significativas en la **mortalidad a 28 días** entre los grupos calóricos no resta relevancia clínica al indicador. El IQ4 evalúa fundamentalmente la **calidad y precisión del soporte nutricional**, no un desenlace pronóstico aislado.
+
+En consecuencia, el bajo cumplimiento observado debe interpretarse como una **señal de alerta para la mejora asistencial**, orientada prioritariamente a reducir la alta proporción de pacientes que reciben un tratamiento nutricional temprano insuficiente.
+
+### **Análisis de la adecuación proteica**
+
+#### **Análisis univariante**
+
+Se realizó un análisis univariante comparativo según el cumplimiento de la meta proteica al cuarto día, clasificando a los pacientes en dos grupos: déficit proteico y cumplimiento de la meta proteica. Los porcentajes se calcularon sobre el número de pacientes con dato disponible para cada variable.
+
+- Para las **variables continuas** se aplican pruebas bivariantes en función de su distribución:
+
+  - **Mann-Whitney** para variables **asimétricas**, expresadas como mediana y rango intercuartílico.
+  
+  - **T-test** para variables con distribución **aproximadamente normal**, expresadas como media y desviación estándar.
+
+- Las **variables categóricas** se resumen mediante frecuencias absolutas y porcentajes, y se comparan entre grupos mediante la **prueba de chi-cuadrado**. En las variables categóricas con frecuencias esperadas bajas, los resultados deben interpretarse con cautela por la posible inestabilidad del contraste chi-cuadrado.
+
+Finalmente, se construye una tabla resumen que integra características basales, gravedad clínica, variables nutricionales, complicaciones y desenlaces, destacando los valores de p significativos o con tendencia estadística.
+
+```{r univariant analysis protein}
+library(dplyr); library(tidyr); library(knitr)
+
+# 0. Creación de la variable con nombres ya acortados
+pacientes_tmn_4dias <- pacientes_tmn_4dias %>% mutate(Grupo_Proteico_D4 = factor(case_when(Prot_kg_D4 < 1.3 ~ "Déficit proteico", Prot_kg_D4 >= 1.3 ~ "Cumple meta proteica"), levels = c("Déficit proteico", "Cumple meta proteica")))
+
+# 1. Función para variables asimétricas (Mediana [Q1-Q3] + Mann-Whitney)
+crear_fila_mw_prot <- function(data, var, nom) {
+  d <- data %>% filter(!is.na(.data[[var]]), !is.na(Grupo_Proteico_D4))
+  t <- d %>% group_by(Grupo_Proteico_D4) %>% summarise(v = sprintf("%.1f [%.1f - %.1f]", median(.data[[var]]), quantile(.data[[var]], 0.25), quantile(.data[[var]], 0.75)), .groups = "drop") %>% pivot_wider(names_from = Grupo_Proteico_D4, values_from = v)
+  p <- wilcox.test(as.formula(paste(var, "~ Grupo_Proteico_D4")), data = d)$p.value
+  t %>% mutate(Variable = nom, p = ifelse(p < 0.001, "<0.001", as.character(round(p, 3)))) %>% select(Variable, everything())
+}
+
+# 2. Función para variables normales (Media ± DE + T-test)
+crear_fila_ttest_prot <- function(data, var, nom) {
+  d <- data %>% filter(!is.na(.data[[var]]), !is.na(Grupo_Proteico_D4))
+  t <- d %>% group_by(Grupo_Proteico_D4) %>% summarise(v = sprintf("%.1f ± %.1f", mean(.data[[var]]), sd(.data[[var]])), .groups = "drop") %>% pivot_wider(names_from = Grupo_Proteico_D4, values_from = v)
+  p <- t.test(as.formula(paste(var, "~ Grupo_Proteico_D4")), data = d)$p.value
+  t %>% mutate(Variable = nom, p = ifelse(p < 0.001, "<0.001", as.character(round(p, 3)))) %>% select(Variable, everything())
+}
+
+# 3. Función para variables categóricas (RESTITUIDOS 'niveles' y 'etiquetas')
+crear_fila_chi_prot <- function(data, var, nom, niveles, etiquetas) {
+  d <- data %>% filter(!is.na(.data[[var]]), !is.na(Grupo_Proteico_D4)) %>% mutate(vc = factor(.data[[var]], levels = niveles, labels = etiquetas))
+  t <- d %>% count(Grupo_Proteico_D4, vc) %>% group_by(Grupo_Proteico_D4) %>% mutate(v = sprintf("%d (%.1f%%)", n, n / sum(n) * 100)) %>% select(-n) %>% pivot_wider(names_from = Grupo_Proteico_D4, values_from = v)
+  p <- chisq.test(table(d$vc, d$Grupo_Proteico_D4))$p.value
+  t %>% mutate(Variable = paste0(nom, ": ", vc), p = ifelse(row_number() == 1, ifelse(p < 0.001, "<0.001", as.character(round(p, 3))), "")) %>% select(-vc) %>% select(Variable, everything())
+}
+
+# 4. Función categóricas Sí/No (RESTITUIDOS 'niveles', 'etiquetas' y 'categoria_mostrar')
+crear_fila_chi_si_prot <- function(data, var, nom, niveles, etiquetas, categoria_mostrar = "Sí") {
+  d <- data %>% filter(!is.na(.data[[var]]), !is.na(Grupo_Proteico_D4)) %>% mutate(vc = factor(.data[[var]], levels = niveles, labels = etiquetas))
+  p <- chisq.test(table(d$vc, d$Grupo_Proteico_D4))$p.value
+  d %>% count(Grupo_Proteico_D4, vc) %>% group_by(Grupo_Proteico_D4) %>% mutate(v = sprintf("%d (%.1f%%)", n, n / sum(n) * 100)) %>% filter(vc == categoria_mostrar) %>% select(-n, -vc) %>% pivot_wider(names_from = Grupo_Proteico_D4, values_from = v) %>% mutate(Variable = paste0(nom, ": ", categoria_mostrar), p = ifelse(p < 0.001, "<0.001", as.character(round(p, 3)))) %>% select(Variable, everything())
+}
+
+# 5. Tabla final univariante ensamblada por bloques clínicos
+tabla_univariante_proteinas <- bind_rows(
+  crear_fila_mw_prot(pacientes_tmn_4dias, "EDAD", "Edad, años"), crear_fila_mw_prot(pacientes_tmn_4dias, "BMI", "BMI, kg/m²"),
+  crear_fila_ttest_prot(pacientes_tmn_4dias, "APACHEII", "APACHE II"), crear_fila_ttest_prot(pacientes_tmn_4dias, "SAPSII", "SAPS II"),
+  crear_fila_mw_prot(pacientes_tmn_4dias, "SOFA1", "SOFA Admisión"), crear_fila_mw_prot(pacientes_tmn_4dias, "NUTRIC_Score", "NUTRIC Score"),
+  crear_fila_chi_prot(pacientes_tmn_4dias, "SEXO", "Sexo", niveles = c(1, 2), etiquetas = c("Hombre", "Mujer")),
+  
+  # Antecedentes
+  crear_fila_chi_si_prot(pacientes_tmn_4dias, "AHTA", "Antecedentes Hipertensión", niveles = c(0, 1), etiquetas = c("No", "Sí")),
+  crear_fila_chi_si_prot(pacientes_tmn_4dias, "ADBTM", "Antecedentes Diabetes mellitus", niveles = c(0, 1), etiquetas = c("No", "Sí")),
+  crear_fila_chi_si_prot(pacientes_tmn_4dias, "AEPOC", "Antecedentes EPOC", niveles = c(0, 1), etiquetas = c("No", "Sí")),
+  crear_fila_chi_si_prot(pacientes_tmn_4dias, "ACARDIOP", "Antecedentes IAM", niveles = c(0, 1), etiquetas = c("No", "Sí")),
+  crear_fila_chi_si_prot(pacientes_tmn_4dias, "ACIRROSIS", "Enfermedad Hepática Crónica", niveles = c(0, 1), etiquetas = c("No", "Sí")),
+  crear_fila_chi_si_prot(pacientes_tmn_4dias, "AIRC", "Fallo Renal Crónico", niveles = c(0, 1), etiquetas = c("No", "Sí")),
+  crear_fila_chi_si_prot(pacientes_tmn_4dias, "AINMUNO", "Antecedentes Inmunosupresión", niveles = c(0, 1), etiquetas = c("No", "Sí")),
+  crear_fila_chi_si_prot(pacientes_tmn_4dias, "ANEOPLAS", "Antecedentes Neoplasia", niveles = c(0, 1), etiquetas = c("No", "Sí")),
+  
+  # Nutrición y Gravedad
+  crear_fila_chi_prot(pacientes_tmn_4dias, "STATUS3", "Tipo de Paciente", niveles = c(0, 1, 2), etiquetas = c("Quirúrgico", "Médico", "Trauma")),
+  crear_fila_chi_si_prot(pacientes_tmn_4dias, "VGSING2", "Paciente con RN (Basado en VGS)", niveles = c(1, 2), etiquetas = c("No", "Sí")),
+  crear_fila_chi_si_prot(pacientes_tmn_4dias, "NUTRISCOR2", "Paciente con RN (Basado en NUTRIC Score)", niveles = c(0, 1), etiquetas = c("No", "Sí")),
+  crear_fila_mw_prot(pacientes_tmn_4dias, "HORASIN", "Momento Inicio Terapia"),
+  crear_fila_chi_prot(pacientes_tmn_4dias, "TIPO_SN_Grupo", "Tipo de Soporte Nutricional", niveles = c(1, 2, 3, 4), etiquetas = c("NE", "NPT", "NE - NPT", "NPT - NE")),
+  crear_fila_mw_prot(pacientes_tmn_4dias, "TOTAL_DIAS_SN", "Días en Terapia Nutricional"),
+  crear_fila_ttest_prot(pacientes_tmn_4dias, "Kcal_14d", "Media kcal/kg/día"),
+  
+  # Complicaciones y Outcomes
+  crear_fila_chi_si_prot(pacientes_tmn_4dias, "ANY_COMPLICATION", "Cualquier Complicación", niveles = c(0, 1), etiquetas = c("No", "Sí")),
+  crear_fila_chi_si_prot(pacientes_tmn_4dias, "PVRGM100", "Volumen de Residuo Gástrico Alto (> 500 mL)", niveles = c(0, 1), etiquetas = c("No", "Sí")),
+  crear_fila_chi_si_prot(pacientes_tmn_4dias, "PDANE", "Diarrea", niveles = c(0, 1), etiquetas = c("No", "Sí")),
+  crear_fila_chi_si_prot(pacientes_tmn_4dias, "PVOMITO", "Vómitos", niveles = c(0, 1), etiquetas = c("No", "Sí")),
+  crear_fila_chi_si_prot(pacientes_tmn_4dias, "PBRONCOAS", "Broncoaspiración", niveles = c(0, 1), etiquetas = c("No", "Sí")),
+  crear_fila_chi_si_prot(pacientes_tmn_4dias, "PISQUINT", "Isquemia Mesentérica", niveles = c(0, 1), etiquetas = c("No", "Sí")),
+  crear_fila_chi_si_prot(pacientes_tmn_4dias, "VM", "Pacientes con Ventilación Mecánica", niveles = c(0, 1), etiquetas = c("No", "Sí")),
+  crear_fila_mw_prot(pacientes_tmn_4dias, "DIASVM", "Días de Ventilación Mecánica"),
+  crear_fila_chi_si_prot(pacientes_tmn_4dias, "NEC_NA", "Necesidad de Noradrenalina", niveles = c(0, 1), etiquetas = c("No", "Sí")),
+  crear_fila_chi_si_prot(pacientes_tmn_4dias, "TRR", "Necesidad de TRR", niveles = c(0, 1), etiquetas = c("No", "Sí")),
+  crear_fila_chi_si_prot(pacientes_tmn_4dias, "INFRESP", "Infección del Tracto Respiratorio", niveles = c(0, 1), etiquetas = c("No", "Sí")),
+  crear_fila_chi_si_prot(pacientes_tmn_4dias, "INFVIA", "Infección relacionada con el Catéter", niveles = c(0, 1), etiquetas = c("No", "Sí")),
+  
+  # Laboratorio y Estancias
+  crear_fila_mw_prot(pacientes_tmn_4dias, "HYPER_UREA", "Nivel de Urea"),
+  crear_fila_ttest_prot(pacientes_tmn_4dias, "HYPER_TRIGLI", "Nivel de Triglicéridos"),
+  crear_fila_mw_prot(pacientes_tmn_4dias, "LIVER_DYSFUNCTION", "Disfunción Hepática"),
+  crear_fila_mw_prot(pacientes_tmn_4dias, "CHOLESTASIS", "Colestasis"),
+  crear_fila_mw_prot(pacientes_tmn_4dias, "MIXED_PATTERN", "Patrón Mixto Hepático"),
+  crear_fila_mw_prot(pacientes_tmn_4dias, "DIAS_UCI", "Días en UCI"),
+  crear_fila_mw_prot(pacientes_tmn_4dias, "DIAS_HOSP", "Días de Hospitalización"),
+  crear_fila_chi_si_prot(pacientes_tmn_4dias, "MUERTO28", "Mortalidad", niveles = c(0, 1), etiquetas = c("No", "Sí"))
+)
+
+# 6. Calcular n y % de cada grupo proteico sobre el total
+n_grupos_proteinas <- pacientes_tmn_4dias %>% filter(!is.na(Grupo_Proteico_D4)) %>% count(Grupo_Proteico_D4) %>% mutate(pct = round(n / sum(n) * 100, 1), nombre_columna = paste0(Grupo_Proteico_D4, " (n = ", n, "; ", pct, "%)"))
+
+nombre_deficit <- n_grupos_proteinas$nombre_columna[n_grupos_proteinas$Grupo_Proteico_D4 == "Déficit proteico"]
+
+nombre_cumple <- n_grupos_proteinas$nombre_columna[n_grupos_proteinas$Grupo_Proteico_D4 == "Cumple meta proteica"]
+
+# 7. Limpieza, formato de p-valores, renombrado de columnas y renderizado
+tabla_univariante_proteinas[is.na(tabla_univariante_proteinas)] <- "-"
+
+tabla_univariante_proteinas <- tabla_univariante_proteinas %>% mutate(p_num = suppressWarnings(as.numeric(ifelse(p == "<0.001", "0.0009", p))), p = case_when(!is.na(p_num) & p_num <= 0.05 ~ paste0("<b><u>", p, "</u></b>"), !is.na(p_num) & p_num <= 0.10 ~ paste0("<b>", p, "</b>"), TRUE ~ p)) %>% select(-p_num) %>% rename(!!nombre_deficit := `Déficit proteico`, !!nombre_cumple := `Cumple meta proteica`)
+
+knitr::kable(tabla_univariante_proteinas, escape = FALSE, caption = "Características clínicas, nutricionales y outcomes según adecuación proteica al día 4")
+```
+
+En el análisis univariante según adecuación proteica al cuarto día, solo el **26,9%** de la cohorte evaluable alcanzó la meta de ≥1,3 g/kg/día, mientras que el **73,1%** presentó déficit proteico. No se observaron diferencias estadísticamente significativas entre grupos en edad, gravedad basal medida por APACHE II, SAPS II, SOFA o NUTRIC Score, ni en la mayoría de las comorbilidades analizadas.
+
+El cumplimiento de la meta proteica se asoció de forma significativa con el **tipo de paciente**, el **inicio más precoz de la terapia nutricional**, el **tipo de soporte nutricional** recibido y un **mayor aporte calórico medio**. Asimismo, los pacientes con déficit proteico presentaron una **mayor proporción de ventilación mecánica**. Se observaron asociaciones de carácter exploratorio para el BMI, el antecedente de neoplasia y el riesgo nutricional según VGS.
+
+No se identificaron diferencias significativas en complicaciones digestivas, complicaciones infecciosas, duración de la estancia en UCI u hospitalaria ni mortalidad a 28 días. En conjunto, estos resultados sugieren que la adecuación proteica al cuarto día se relaciona principalmente con factores vinculados al proceso de soporte nutricional y al perfil clínico-asistencial, más que con diferencias marcadas en la gravedad basal de los pacientes.
+
+#### **Análisis multivariable**
+##### **Regresión logística binaria**
+
+Se realizó un análisis multivariable mediante regresión logística binaria, considerando como variable dependiente el cumplimiento de la meta proteica al cuarto día, codificado como déficit proteico frente a cumplimiento de la meta. A partir de las variables con asociación univariante p < 0,10, se generaron múltiples combinaciones de modelos de entre dos y seis predictores. Cada modelo fue evaluado mediante número de casos completos, AIC, área bajo la curva ROC y número de variables significativas o con tendencia estadística. Finalmente, se seleccionó el modelo con mejor equilibrio entre ajuste, capacidad discriminativa y parsimonia, y se calcularon las odds ratios ajustadas con sus intervalos de confianza al 95%.
+
+```{r multivariable analysis protein}
+library(dplyr); library(tidyr); library(broom); library(pROC); library(purrr); library(knitr)
+
+# 1. Preparación de datos. Variable dependiente:0 = Déficit proteico / 1 = Cumple meta proteica
+datos_modelos_prot <- pacientes_tmn_4dias %>% mutate(Cumple_Proteina_D4 = factor(case_when(Prot_kg_D4 < 1.3 ~ 0, Prot_kg_D4 >= 1.3 ~ 1, TRUE ~ NA_real_), levels = c(0, 1), labels = c("Deficit", "Cumple")), STATUS3 = factor(STATUS3, levels = 0:2, labels = c("Quirúrgico", "Médico", "Trauma")), TIPO_SN_simple = factor(case_when(TIPO_SN_Grupo == 1 ~ "NE exclusiva", TIPO_SN_Grupo %in% c(2, 3, 4) ~ "Con NPT", TRUE ~ NA_character_), levels = c("NE exclusiva", "Con NPT")), VGSING2 = factor(VGSING2, levels = c(1, 2), labels = c("No", "Sí")), ANEOPLAS = factor(ANEOPLAS, levels = c(0, 1), labels = c("No", "Sí")), VM = factor(VM, levels = c(0, 1), labels = c("No", "Sí"))) %>% drop_na(Cumple_Proteina_D4)
+
+print(paste("Pacientes disponibles:", nrow(datos_modelos_prot)))
+
+# 2. Variables candidatas: solo variables con p < 0,10 en el univariante
+variables_candidatas_prot <- c("BMI", "ANEOPLAS", "STATUS3", "VGSING2", "HORASIN", "TIPO_SN_simple", "Kcal_14d", "VM")
+
+# 3. Función para evaluar modelos logísticos binarios
+evaluar_modelo_prot <- function(vars, data) {tryCatch({d_mod <- data %>% select(all_of(c("Cumple_Proteina_D4", vars))) %>% drop_na()
+    if (nrow(d_mod) < 80 || length(unique(d_mod$Cumple_Proteina_D4)) < 2) return(NULL)
+    mod <- glm(as.formula(paste("Cumple_Proteina_D4 ~", paste(vars, collapse = " + "))), data = d_mod, family = binomial)
+    p_vals <- tidy(mod) %>% filter(term != "(Intercept)")
+    roc_obj <- roc(response = d_mod$Cumple_Proteina_D4, predictor = predict(mod, type = "response"), levels = c("Deficit", "Cumple"), direction = "<", quiet = TRUE)
+    data.frame(Variables = paste(vars, collapse = " + "), Num_variables = length(vars), N_modelo = nrow(d_mod), AIC = AIC(mod), AUC = as.numeric(auc(roc_obj)), N_significativas = sum(p_vals$p.value <= 0.05, na.rm = TRUE), N_tendencia = sum(p_vals$p.value <= 0.20, na.rm = TRUE))}, error = function(e) NULL)}
+
+# 4. Combinaciones de variables
+# Se exploran modelos de 2 a 6 variables para evitar modelos excesivamente cargados
+combinaciones_prot <- unlist(lapply(2:6, function(k) combn(variables_candidatas_prot, k, simplify = FALSE)), recursive = FALSE)
+
+# 5. Evaluación masiva de modelos
+resultados_modelos_prot <- map_dfr(combinaciones_prot, evaluar_modelo_prot, data = datos_modelos_prot)
+
+# 6. Top 15 modelos por menor AIC
+resultados_modelos_prot %>% arrange(AIC) %>% slice(1:15) %>% kable(digits = 3, caption = "Top 15 modelos proteicos por menor AIC")
+
+# 7. Top 15 modelos por mayor AUC
+resultados_modelos_prot %>% arrange(desc(AUC)) %>% slice(1:15) %>% kable(digits = 3, caption = "Top 15 modelos proteicos por mayor AUC")
+
+# 8. Ranking equilibrado: AIC + AUC + parsimonia
+mejores_eq_prot <- resultados_modelos_prot %>% mutate(rank_comb = rank(AIC) + rank(-AUC) + Num_variables) %>% arrange(rank_comb) %>% slice(1:15)
+kable(mejores_eq_prot, digits = 3, caption = "Top 15 modelos proteicos: equilibrio AIC, AUC y parsimonia")
+
+# 9. Ajuste del modelo final
+mejor_formula_prot <- mejores_eq_prot$Variables[1]
+modelo_final_prot <- glm(as.formula(paste("Cumple_Proteina_D4 ~", mejor_formula_prot)), data = datos_modelos_prot, family = binomial)
+print(paste("Modelo final seleccionado:", mejor_formula_prot))
+
+# 10. Tabla de resultados del modelo final
+tabla_modelo_final_prot <- tidy(modelo_final_prot, conf.int = TRUE, exponentiate = TRUE) %>% filter(term != "(Intercept)") %>% mutate(p = ifelse(p.value < 0.001, "<0.001", sprintf("%.3f", p.value)), OR_IC95 = sprintf("%.2f [%.2f - %.2f]", estimate, conf.low, conf.high), Variable = recode(term, "BMI" = "BMI", "ANEOPLASSí" = "Antecedentes de neoplasia", "STATUS3Médico" = "Paciente médico vs quirúrgico", "STATUS3Trauma" = "Paciente trauma vs quirúrgico", "VGSING2Sí" = "Riesgo nutricional por VGS", "HORASIN" = "Inicio de terapia nutricional", "TIPO_SN_simpleCon NPT" = "Soporte con NPT vs NE exclusiva", "Kcal_14d" = "Media kcal/kg/día", "VMSí" = "Ventilación mecánica"), Comparacion = "Cumple meta proteica vs déficit proteico") %>% select(Comparacion, Variable, OR_IC95, p)
+kable(tabla_modelo_final_prot, caption = "Modelo final de adecuación proteica al día 4")
+
+# 11. Métricas del modelo final
+mejores_eq_prot %>% slice(1) %>% select(Variables, Num_variables, N_modelo, AIC, AUC, N_significativas, N_tendencia) %>% kable(digits = 3, caption = "Métricas del modelo final proteico")
+```
+
+El modelo multivariable final de regresión logística binaria incluyó **BMI**, **tipo de paciente**, **tipo de soporte nutricional**, **aporte calórico medio** y **ventilación mecánica**, y mostró una capacidad discriminativa aparente moderada —**AUC = 0,732**—. La selección del modelo se consideró adecuada por su equilibrio entre menor AIC, rendimiento discriminativo y parsimonia, sin ganancia relevante al añadir variables adicionales.
+
+Tras el ajuste multivariable, el **cumplimiento de la meta proteica** se asoció de forma independiente con **mayor BMI** —**OR 1,06**; IC95% 1,02–1,11; **p = 0,007**— y con **mayor aporte calórico medio** —**OR 1,18**; IC95% 1,13–1,25; **p < 0,001**—. Por el contrario, los **pacientes médicos presentaron menor probabilidad** de alcanzar la meta proteica **que los quirúrgicos** —**OR 0,47**; IC95% 0,26–0,83; **p = 0,009**—, al igual que los pacientes con **ventilación mecánica** —**OR 0,38**; IC95% 0,17–0,87; **p = 0,021**—. Los pacientes traumáticos no mostraron diferencias significativas frente a los quirúrgicos. El soporte con NPT mostró una tendencia hacia menor probabilidad de cumplimiento proteico frente a la nutrición enteral exclusiva —OR 0,59; IC95% 0,33–1,02; p = 0,064—.
+
+En conjunto, los resultados sugieren que la adecuación proteica al cuarto día se relaciona principalmente con la intensidad global del soporte nutricional y con el perfil clínico-asistencial del paciente. No obstante, dado que el modelo incluye variables evolutivas de aporte nutricional, especialmente el aporte calórico medio, estos resultados deben interpretarse como asociaciones exploratorias y no como predictores estrictamente basales del cumplimiento proteico.
+
+```{r}
+# Curva ROC del modelo logístico binario de adecuación proteica
+library(dplyr); library(pROC); library(ggplot2)
+
+# 1. Base usada por el modelo final
+vars_final_prot <- strsplit(mejor_formula_prot, " \\+ ")[[1]]
+datos_roc_prot <- datos_modelos_prot %>% select(Cumple_Proteina_D4, all_of(vars_final_prot)) %>% drop_na()
+
+# 2. Probabilidades predichas
+datos_roc_prot$prob_cumple <- predict(modelo_final_prot, newdata = datos_roc_prot, type = "response")
+
+# 3. Curva ROC
+roc_prot <- roc(response = datos_roc_prot$Cumple_Proteina_D4, predictor = datos_roc_prot$prob_cumple, levels = c("Deficit", "Cumple"), direction = "<", quiet = TRUE)
+auc_prot <- as.numeric(auc(roc_prot))
+
+# 4. Coordenadas para ggplot
+df_roc_prot <- coords(roc_prot, x = "all", ret = c("specificity", "sensitivity"), transpose = FALSE) %>% as.data.frame() %>% mutate(FPR = 1 - specificity)
+
+# 5. Gráfico ROC
+grafico_roc_prot <- ggplot(df_roc_prot, aes(x = FPR, y = sensitivity)) + geom_line(linewidth = 1.2) + geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "gray50") + coord_equal() + scale_x_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.2)) + scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.2)) + labs(title = "Rendimiento discriminativo aparente del modelo logístico proteico", subtitle = paste0("Curva ROC; AUC aparente = ", sprintf("%.3f", auc_prot)), x = "1 - Especificidad", y = "Sensibilidad") + theme_minimal() + theme(plot.title = element_text(face = "bold", hjust = 0.5, size = 13), plot.subtitle = element_text(hjust = 0.5, size = 11), axis.title = element_text(face = "bold"), panel.grid.minor = element_blank())
+
+print(grafico_roc_prot)
+```
+
+La curva ROC del modelo logístico binario mostró una capacidad discriminativa aparente moderada, con un AUC de 0,732. Este resultado indica que el modelo presenta una capacidad aceptable para discriminar entre pacientes con déficit proteico y pacientes que alcanzan la meta proteica al cuarto día. No obstante, dado que la curva se calculó sobre la misma muestra utilizada para ajustar el modelo, el AUC debe interpretarse como rendimiento aparente, sin validación interna.
+
+##### **Regresión de Cox exploratoria**
+
+Se realizó un procedimiento exploratorio de selección de modelos de regresión de Cox para evaluar el rendimiento discriminativo aparente de distintos modelos asociados a la pertenencia al grupo de déficit proteico al cuarto día. Se utilizó `DIAS_UCI` como variable temporal y se codificó el evento como déficit proteico —`Prot_kg_D4 < 1,3 g/kg/día`— frente a cumplimiento de la meta proteica. Por tanto, el evento se definió como `1 = déficit proteico` y `0 = cumplimiento de la meta proteica`.
+
+A partir de las variables con asociación univariante **p < 0,10** —**BMI, neoplasia, tipo de paciente, valoración global subjetiva, tiempo hasta el inicio del soporte nutricional, tipo de soporte nutricional, aporte calórico medio y ventilación mecánica**— se evaluaron todas las combinaciones posibles de 2 a 6 covariables. Cada modelo fue estimado mediante regresión de Cox, calculándose el AIC, la concordancia C, el número de covariables significativas, el número de variables con tendencia estadística y el cumplimiento del supuesto de riesgos proporcionales mediante el test de Schoenfeld. El modelo con mejor rendimiento aparente se seleccionó mediante un ranking compuesto que integró ajuste global, capacidad discriminativa, parsimonia y penalización por violación del supuesto de proporcionalidad.
+
+```{r}
+library(dplyr); library(tidyr); library(broom); library(survival); library(purrr); library(knitr)
+
+# 1. Preparación de datos para Cox proteico
+# Evento: 0 = Cumple meta proteica / 1 = Déficit proteico
+# Tiempo: DIAS_UCI
+datos_cox_prot <- pacientes_tmn_4dias %>%
+  mutate(Evento_Deficit_Prot = case_when(Prot_kg_D4 < 1.3 ~ 1, Prot_kg_D4 >= 1.3 ~ 0, TRUE ~ NA_real_),
+    Grupo_Proteico_modelo = factor(Evento_Deficit_Prot, levels = c(0, 1),
+      labels = c("Cumple", "Deficit")),
+    STATUS3 = factor(STATUS3, levels = 0:2, labels = c("Quirúrgico", "Médico", "Trauma")),
+    TIPO_SN_simple = factor(case_when(TIPO_SN_Grupo == 1 ~ "NE exclusiva", TIPO_SN_Grupo %in% c(2, 3, 4) ~ "Con NPT", TRUE ~ NA_character_), levels = c("NE exclusiva", "Con NPT")),
+    VGSING2 = factor(VGSING2, levels = c(1, 2), labels = c("No", "Sí")),
+    ANEOPLAS = factor(ANEOPLAS, levels = c(0, 1), labels = c("No", "Sí")),
+    VM = factor(VM, levels = c(0, 1), labels = c("No", "Sí"))) %>%
+  filter(!is.na(DIAS_UCI), !is.na(Evento_Deficit_Prot))
+
+# 2. Resumen de la base analítica
+resumen_base_cox_prot <- data.frame(N_pacientes = nrow(datos_cox_prot), N_deficit_proteico = sum(datos_cox_prot$Evento_Deficit_Prot == 1, na.rm = TRUE), N_cumple_meta = sum(datos_cox_prot$Evento_Deficit_Prot == 0, na.rm = TRUE), Porcentaje_deficit = round(mean(datos_cox_prot$Evento_Deficit_Prot == 1, na.rm = TRUE) * 100, 1), Porcentaje_cumple = round(mean(datos_cox_prot$Evento_Deficit_Prot == 0, na.rm = TRUE) * 100, 1))
+
+kable(resumen_base_cox_prot, caption = "Base utilizada para los modelos Cox de adecuación proteica")
+```
+
+La base analítica incluyó 469 pacientes evaluables, de los cuales 343 —73,1%— presentaron déficit proteico al cuarto día y 126 —26,9%— alcanzaron la meta proteica. El elevado número de eventos proporciona estabilidad numérica suficiente para la exploración multivariable, aunque la interpretación debe mantenerse como análisis complementario por la naturaleza no temporal del desenlace.
+
+```{r}
+# 3. Variables candidatas
+# Asociación univariante p < 0,10
+variables_candidatas_cox_prot <- c("BMI", "ANEOPLAS", "STATUS3", "VGSING2", "HORASIN", "TIPO_SN_simple", "Kcal_14d", "VM")
+
+# 4. Función para evaluar modelos Cox
+evaluar_modelo_cox_prot <- function(vars, data) {tryCatch({d_mod <- data %>% select(all_of(c("DIAS_UCI", "Evento_Deficit_Prot", vars))) %>% drop_na()
+    if (nrow(d_mod) < 80 || length(unique(d_mod$Evento_Deficit_Prot)) < 2 || sum(d_mod$Evento_Deficit_Prot == 1, na.rm = TRUE) < 20 || sum(d_mod$Evento_Deficit_Prot == 0, na.rm = TRUE) < 20) {return(NULL)}
+    mod <- coxph(as.formula(paste("Surv(DIAS_UCI, Evento_Deficit_Prot) ~", paste(vars, collapse = " + "))), data = d_mod, x = TRUE)
+    resumen <- summary(mod)
+    p_vals <- tidy(mod) %>% filter(term != "(Intercept)")
+    ph_tabla <- as.data.frame(cox.zph(mod)$table) %>% tibble::rownames_to_column("Variable")
+    ph_global_p <- ph_tabla %>% filter(Variable == "GLOBAL") %>% pull(p)
+    n_ph_violaciones <- ph_tabla %>% filter(Variable != "GLOBAL") %>% summarise(n = sum(p < 0.05, na.rm = TRUE)) %>% pull(n)
+    data.frame(Variables = paste(vars, collapse = " + "), Num_variables = length(vars), N_modelo = nrow(d_mod), N_eventos = sum(d_mod$Evento_Deficit_Prot == 1, na.rm = TRUE), N_no_eventos = sum(d_mod$Evento_Deficit_Prot == 0, na.rm = TRUE), AIC = AIC(mod), Concordancia_C = as.numeric(resumen$concordance[1]), N_significativas = sum(p_vals$p.value <= 0.05, na.rm = TRUE), N_tendencia = sum(p_vals$p.value <= 0.10, na.rm = TRUE), N_exploratorias = sum(p_vals$p.value <= 0.20, na.rm = TRUE), PH_global_p = ph_global_p, PH_ok = ifelse(ph_global_p > 0.05, "Sí", "No"), N_PH_violaciones = n_ph_violaciones)}, error = function(e) NULL)}
+
+# 5. Crear combinaciones de variables
+# Modelos de 2 a 6 predictores
+max_vars_cox_prot <- min(6, length(variables_candidatas_cox_prot))
+combinaciones_cox_prot <- unlist(lapply(2:max_vars_cox_prot, function(k) {combn(variables_candidatas_cox_prot, k, simplify = FALSE)}), recursive = FALSE)
+
+length(combinaciones_cox_prot)
+```
+
+Se generaron 238 combinaciones candidatas, incluyendo modelos de 2 a 6 predictores. Esta estrategia permite comparar de forma sistemática modelos con distinto grado de complejidad, incorporando simultáneamente criterios de ajuste, discriminación, parsimonia y estabilidad del supuesto de riesgos proporcionales.
+
+```{r}
+# 6. Evaluación masiva de modelos Cox
+resultados_modelos_cox_prot <- map_dfr(combinaciones_cox_prot, evaluar_modelo_cox_prot, data = datos_cox_prot)
+
+# 7. Top 15 modelos por menor AIC
+resultados_modelos_cox_prot %>% arrange(AIC) %>% slice(1:15) %>% kable(digits = 3, caption = "Top 15 modelos Cox proteicos por menor AIC")
+```
+
+Según el criterio de menor AIC, el modelo con mejor ajuste aparente fue el compuesto por `BMI + STATUS3 + VGSING2 + HORASIN + Kcal_14d + VM`, con AIC = 3444,611 y concordancia C = 0,674. No obstante, todos los modelos mejor posicionados por AIC incumplieron el supuesto global de riesgos proporcionales, con p global < 0,05 y una violación individual del supuesto PH, lo que limita su validez como modelos Cox inferenciales.
+
+```{r}
+# 8. Top 15 modelos por mayor concordancia C
+resultados_modelos_cox_prot %>% arrange(desc(Concordancia_C)) %>% slice(1:15) %>% kable(digits = 3, caption = "Top 15 modelos Cox proteicos por mayor concordancia C")
+```
+
+El ranking por concordancia identificó el mismo modelo como el de mayor capacidad discriminativa aparente, con C = 0,674. La concordancia fue, en conjunto, moderada-baja y muy próxima entre los modelos superiores, con valores alrededor de 0,67. De nuevo, los modelos con mayor discriminación incluyeron `Kcal_14d` y presentaron incumplimiento del supuesto de proporcionalidad, lo que sugiere que parte del rendimiento aparente del modelo depende de una covariable evolutiva con comportamiento no proporcional en el tiempo.
+
+```{r}
+# 9. Ranking equilibrado
+# Penaliza incumplimiento global PH y violaciones individuales
+mejores_eq_cox_prot <- resultados_modelos_cox_prot %>% mutate(penalizacion_PH = ifelse(PH_ok == "Sí", 0, 10) + N_PH_violaciones * 5, rank_comb = rank(AIC) + rank(-Concordancia_C) + Num_variables + penalizacion_PH) %>% arrange(rank_comb, Num_variables, AIC, desc(Concordancia_C)) %>% slice(1:15)
+
+kable(mejores_eq_cox_prot, digits = 3, caption = "Top 15 modelos Cox proteicos: equilibrio AIC, concordancia C, parsimonia y PH")
+```
+
+El ranking compuesto, que integró AIC, concordancia C, número de predictores y penalización por incumplimiento del supuesto PH, seleccionó nuevamente el modelo `BMI + STATUS3 + VGSING2 + HORASIN + Kcal_14d + VM` como el de mejor rendimiento aparente. Sin embargo, el modelo seleccionado mantuvo incumplimiento del supuesto de riesgos proporcionales —PH global p = 0,002—, por lo que debe considerarse únicamente como el modelo con mejor equilibrio estadístico aparente dentro del procedimiento exploratorio, no como un modelo Cox plenamente válido para inferencia temporal.
+
+```{r}
+# 10. Ajuste del modelo seleccionado
+mejor_formula_cox_prot <- mejores_eq_cox_prot$Variables[1]
+
+vars_final_cox_prot <- strsplit(mejor_formula_cox_prot, " \\+ ")[[1]]
+
+datos_final_cox_prot <- datos_cox_prot %>% select(all_of(c("DIAS_UCI", "Evento_Deficit_Prot", vars_final_cox_prot))) %>% drop_na()
+
+modelo_final_cox_prot <- coxph(as.formula(paste( "Surv(DIAS_UCI, Evento_Deficit_Prot) ~", mejor_formula_cox_prot)), data = datos_final_cox_prot, x = TRUE)
+
+print(paste("Modelo final Cox seleccionado:", mejor_formula_cox_prot))
+
+summary(modelo_final_cox_prot)
+```
+
+El modelo seleccionado se ajustó sobre 467 pacientes, con 341 eventos de déficit proteico. La concordancia C fue de **0,674**, lo que indica una capacidad discriminativa aparente moderada-baja. El contraste global del modelo fue estadísticamente significativo —likelihood ratio test p ≈ 1e-13; Wald test p ≈ 4e-13; score test p ≈ 5e-13—, aunque esta significación global no resuelve la limitación derivada del incumplimiento del supuesto de riesgos proporcionales.
+
+```{r}
+# 11. Tabla de resultados del modelo seleccionado
+tabla_modelo_final_cox_prot <- tidy(modelo_final_cox_prot, conf.int = TRUE, exponentiate = TRUE) %>% filter(term != "(Intercept)") %>% mutate(
+    p = ifelse(p.value < 0.001, "<0.001", sprintf("%.3f", p.value)),
+    HR_IC95 = sprintf("%.2f [%.2f - %.2f]", estimate, conf.low, conf.high),
+    Variable = recode(term, "BMI" = "BMI", "ANEOPLASSí" = "Antecedentes de neoplasia", "STATUS3Médico" = "Paciente médico vs quirúrgico", "STATUS3Trauma" = "Paciente trauma vs quirúrgico", "VGSING2Sí" = "Riesgo nutricional por VGS", "HORASIN" = "Inicio de terapia nutricional", "TIPO_SN_simpleCon NPT" = "Soporte con NPT vs NE exclusiva", "Kcal_14d" = "Media kcal/kg/día", "VMSí" = "Ventilación mecánica"),
+    Modelo = "Déficit proteico vs cumplimiento") %>% select(Modelo, Variable, HR_IC95, p)
+
+kable(tabla_modelo_final_cox_prot, caption = "Modelo final Cox para déficit proteico usando DIAS_UCI como tiempo")
+```
+
+En el modelo seleccionado, al estar codificado el evento como déficit proteico, las HR < 1 indican menor hazard relativo de pertenecer al grupo de déficit proteico. Se observaron asociaciones inversas estadísticamente significativas entre **déficit proteico** y **BMI** —**HR 0,95**; IC95% 0,93-0,98; **p < 0,001**—, **paciente médico frente a quirúrgico** —**HR 0,74**; IC95% 0,56-0,97; **p = 0,032**—, **paciente traumático frente a quirúrgico** —**HR 0,60**; IC95% 0,40-0,89; **p = 0,012**—, **media calórica/kg/día** —**HR 0,90**; IC95% 0,88-0,93; **p < 0,001**— y **ventilación mecánica** —**HR 0,58**; IC95% 0,35-0,95; **p = 0,032**—. La VGS y el tiempo hasta el inicio de la terapia nutricional no mantuvieron asociación estadísticamente significativa.
+
+```{r}
+# 12. Métricas del modelo seleccionado
+metricas_final_cox_prot <- mejores_eq_cox_prot %>% slice(1) %>% select(Variables, Num_variables, N_modelo, N_eventos, N_no_eventos, AIC, Concordancia_C, N_significativas, N_tendencia, N_exploratorias, PH_global_p, PH_ok, N_PH_violaciones)
+
+kable(metricas_final_cox_prot, digits = 3, caption = "Métricas del modelo final Cox proteico")
+```
+
+El modelo seleccionado incluyó 6 predictores, con N = 467, 341 eventos, **AIC = 3444,611** y **concordancia C = 0,674**. Presentó 5 covariables significativas, 5 con p ≤ 0,10 y 6 con p ≤ 0,20. Sin embargo, el supuesto global de riesgos proporcionales no se cumplió —PH global p = 0,002— y se detectó una violación individual, por lo que el modelo debe interpretarse como una caracterización exploratoria del déficit proteico y no como un modelo de supervivencia válido para inferencia temporal.
+
+```{r}
+# 13. Comprobación del supuesto de riesgos proporcionales
+test_ph_final_cox_prot <- cox.zph(modelo_final_cox_prot)
+
+tabla_ph_final_cox_prot <- as.data.frame(test_ph_final_cox_prot$table) %>% tibble::rownames_to_column("Variable") %>% mutate(p_txt = ifelse(p < 0.001, "<0.001", sprintf("%.3f", p))) %>% select(Variable, chisq, df, p = p_txt)
+
+kable(tabla_ph_final_cox_prot, digits = 3, caption = "Comprobación del supuesto de riesgos proporcionales del modelo Cox proteico final")
+```
+
+El test de Schoenfeld mostró incumplimiento global del supuesto de riesgos proporcionales —χ² = 22,617; gl = 7; p = 0,002—. La principal fuente de no proporcionalidad fue `Kcal_14d`, con p < 0,001, mientras que el resto de covariables no mostró violaciones individuales estadísticamente significativas. Este resultado limita la interpretación de las HR como efectos constantes en el tiempo y refuerza el carácter meramente exploratorio del modelo Cox.
+
+En conjunto, aunque se exploró la aplicación de modelos de Cox utilizando `DIAS_UCI` como variable temporal y el déficit proteico al cuarto día como evento, este enfoque presenta limitaciones metodológicas relevantes. El déficit proteico al día 4 no constituye un evento temporal propiamente dicho, sino una clasificación fija definida por el aporte proteico alcanzado en un momento concreto del seguimiento. En consecuencia, el uso de la estancia en UCI como tiempo hasta evento genera una estructura de supervivencia artificial y limita la interpretabilidad de los hazard ratios.
+
+El modelo con mejor rendimiento aparente presentó AIC = 3444,611 y concordancia C = 0,674, pero incumplió el supuesto de riesgos proporcionales de forma global —p = 0,002—, fundamentalmente por el comportamiento no proporcional de `Kcal_14d` —p < 0,001—. Por este motivo, los resultados del modelo de Cox deben considerarse únicamente exploratorios y no deberían constituir el análisis principal de los factores asociados al déficit proteico. Para este objetivo, resulta metodológicamente más apropiado el modelo de regresión logística binaria, dado que el desenlace de interés es dicotómico y fijo —déficit frente a cumplimiento de la meta proteica—, no un evento dependiente del tiempo.
+
+```{r}
+# Curva ROC del score lineal del modelo Cox proteico
+library(dplyr); library(pROC); library(ggplot2)
+
+# 1. Base usada por el modelo Cox final
+datos_roc_cox_prot <- datos_final_cox_prot
+
+# 2. Score lineal del modelo Cox
+datos_roc_cox_prot$score_cox <- predict(modelo_final_cox_prot, newdata = datos_roc_cox_prot, type = "lp")
+
+# 3. Curva ROC
+roc_cox_prot <- roc(response = datos_roc_cox_prot$Evento_Deficit_Prot, predictor = datos_roc_cox_prot$score_cox, levels = c(0, 1), direction = "<", quiet = TRUE)
+auc_cox_prot <- as.numeric(auc(roc_cox_prot))
+
+# 4. Coordenadas para ggplot
+df_roc_cox_prot <- coords(roc_cox_prot, x = "all", ret = c("specificity", "sensitivity"), transpose = FALSE) %>% as.data.frame() %>% mutate(FPR = 1 - specificity)
+
+# 5. Gráfico
+grafico_roc_cox_prot <- ggplot(df_roc_cox_prot, aes(x = FPR, y = sensitivity)) + geom_line(linewidth = 1.2) + geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "gray50") + coord_equal() + scale_x_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.2)) + scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.2)) + labs(title = "Rendimiento discriminativo aparente del modelo Cox proteico", subtitle = paste0("Curva ROC basada en el score lineal; AUC aparente = ", sprintf("%.3f", auc_cox_prot)), x = "1 - Especificidad", y = "Sensibilidad") + theme_minimal() + theme(plot.title = element_text(face = "bold", hjust = 0.5, size = 13), plot.subtitle = element_text(hjust = 0.5, size = 11), axis.title = element_text(face = "bold"), panel.grid.minor = element_blank())
+
+print(grafico_roc_cox_prot)
+```
+
+La curva ROC construida a partir del score lineal del modelo Cox proteico mostró una capacidad discriminativa aparente limitada-moderada, con un **AUC de 0,662**. Este rendimiento fue inferior al observado en el modelo de regresión logística binaria para el mismo desenlace, lo que refuerza la menor utilidad del enfoque de Cox en este contexto. Además, dado que el modelo Cox incumplió el supuesto global de riesgos proporcionales y que el déficit proteico al cuarto día constituye una clasificación fija, no un evento temporal real, esta curva debe interpretarse únicamente como una medida exploratoria de discriminación aparente.
+
+#### **Análisis de la mortalidad mediante Kaplan-Meier y log-rank**
+
+Se realizó un análisis de supervivencia mediante curvas de **Kaplan-Meier** para comparar la supervivencia acumulada a 28 días según la adecuación proteica al cuarto día. Los pacientes se clasificaron en dos grupos: déficit proteico y cumplimiento de la meta proteica, definida como un aporte ≥1,3 g/kg/día. Se utilizó `ESTADA28` como variable temporal de seguimiento y `MUERTO28` como evento, codificado como 0 = superviviente y 1 = fallecido. Las diferencias entre curvas se evaluaron mediante el **test de log-rank**, incorporando además la tabla de pacientes en riesgo durante el periodo de seguimiento.
+
+```{r}
+library(dplyr); library(survival); library(survminer); library(knitr)
+
+# Tiempo: ESTADA28 | Evento: MUERTO28 | Grupos: Déficit proteico / Cumple meta proteica
+
+# 1. Preparar base
+datos_km_prot <- pacientes_tmn_4dias %>% mutate(Grupo_Proteico_KM = factor(case_when(Prot_kg_D4 < 1.3 ~ "Déficit proteico", Prot_kg_D4 >= 1.3 ~ "Cumple meta proteica", TRUE ~ NA_character_), levels = c("Déficit proteico", "Cumple meta proteica")), Evento_Muerte28 = case_when(MUERTO28 == 1 ~ 1, MUERTO28 == 0 ~ 0, TRUE ~ NA_real_)) %>% filter(!is.na(Grupo_Proteico_KM), !is.na(ESTADA28), !is.na(Evento_Muerte28))
+
+# 2. Comprobar n y eventos por grupo
+datos_km_prot %>% group_by(Grupo_Proteico_KM) %>% summarise(n = n(), muertes_28d = sum(Evento_Muerte28 == 1, na.rm = TRUE), mortalidad_28d = round(mean(Evento_Muerte28 == 1, na.rm = TRUE) * 100, 1), .groups = "drop") %>% kable(caption = "Mortalidad a 28 días según grupo de adecuación proteica")
+
+# 3. Ajustar Kaplan-Meier y test de log-rank
+km_prot <- survfit(Surv(ESTADA28, Evento_Muerte28) ~ Grupo_Proteico_KM, data = datos_km_prot); logrank_prot <- survdiff(Surv(ESTADA28, Evento_Muerte28) ~ Grupo_Proteico_KM, data = datos_km_prot)
+p_logrank <- 1 - pchisq(logrank_prot$chisq, length(logrank_prot$n) - 1); p_logrank_txt <- ifelse(p_logrank < 0.001, "<0.001", sprintf("%.3f", p_logrank))
+
+# 4. Gráfico Kaplan-Meier según adecuación proteica
+ggsurvplot(km_prot, data = datos_km_prot, risk.table = TRUE, pval = paste0("Log-rank p = ", p_logrank_txt), conf.int = FALSE, censor = TRUE, xlab = "Días de seguimiento", ylab = "Supervivencia acumulada", title = "Supervivencia a 28 días según adecuación proteica", legend.title = "Grupo proteico", legend.labs = c("Déficit proteico", "Cumple meta proteica"), break.time.by = 7, xlim = c(0, 28), risk.table.height = 0.25, ggtheme = theme_minimal())
+```
+
+La mortalidad a 28 días fue del **28,6%** en el grupo con déficit proteico —98/343 pacientes— y del **21,4%** en el grupo que cumplió la meta proteica —27/126 pacientes—. Las curvas de Kaplan-Meier muestran una supervivencia acumulada discretamente superior en los pacientes que alcanzaron la meta proteica, aunque sin una separación amplia ni sostenida entre grupos. El test de log-rank no evidenció diferencias estadísticamente significativas en la supervivencia a 28 días según la adecuación proteica al cuarto día —**p = 0,143**—. Por tanto, en este análisis no ajustado, el cumplimiento de la meta proteica se asoció con una menor mortalidad absoluta, pero esta diferencia no alcanzó significación estadística.
+
+#### **Conclusión adecuación proteica**
+
+El componente proteico evidencia un cumplimiento claramente insuficiente al cuarto día de soporte nutricional, siendo un problema de mayor magnitud que la inadecuación calórica:
+
+- **26,9%** de los pacientes alcanzó la meta adecuada (≥1,3 g/kg/día).
+
+- **73,1%** presentó déficit proteico.
+
+**Factores asociados** (**Análisis univariante**)
+
+El éxito en la meta proteica no depende de la gravedad del paciente al ingreso, sino de la gestión de la terapia:
+
+- **No se asoció a**: Gravedad basal (APACHE II, SAPS II, SOFA, NUTRIC Score), comorbilidades previas, complicaciones clínicas, estancias ni mortalidad a 28 días.
+
+- **Sí se asoció a**: Variables del proceso asistencial, destacando el inicio precoz de la terapia, el tipo de soporte, un mayor aporte calórico medio y una menor frecuencia de ventilación mecánica.
+
+**Modelos predictivos y decisiones metodológicas**
+
+- **Regresión logística binaria** (**Modelo principal**): Mostró una capacidad discriminativa moderada (**AUC = 0,732**). Confirmó que la probabilidad de cumplir la meta aumenta con un **mayor BMI** y **mayor aporte calórico**, y disminuye en pacientes **médicos** (**vs. quirúrgicos**) y en aquellos sometidos a **ventilación mecánica**. *Metodológicamente, es el análisis idóneo al evaluar un desenlace dicotómico y fijo*.
+
+- **Regresión de Cox** (**Análisis exploratorio**): Debe interpretarse con cautela. Mostró un rendimiento aparente menor (Concordancia C = 0,674; AUC lineal = 0,662) e incumplió el supuesto global de riesgos proporcionales (especialmente por el efecto temporal de *Kcal_14d*). Además, al no ser el déficit al cuarto día un evento temporal continuo real, este enfoque queda relegado frente al modelo logístico.
+
+**Auditoría clínica y oportunidades de mejora**
+
+Los resultados demuestran que **no basta con alcanzar el objetivo energético**; la proteína debe monitorizarse de forma independiente. Las estrategias de mejora en la UCI deben centrarse en:
+
+1. Revisar la progresión diaria del soporte nutricional.
+
+2. Detectar precozmente a los pacientes estancados por debajo del objetivo proteico.
+
+3. Optimizar la composición de las fórmulas (enterales o parenterales).
+
+4. Establecer protocolos de rescate cuando el aporte resulte insuficiente.
+
+**Final**
+
+El bajo cumplimiento de la meta proteica es una **señal relevante de mejora asistencial**. Su éxito depende menos de la gravedad clásica del paciente y mucho más de la **calidad, intensidad y progresión efectiva del soporte nutricional**. En el marco del IQ4, este componente ha demostrado ser un indicador altamente sensible para detectar márgenes de mejora reales en la práctica clínica diaria de la UCI.
+
