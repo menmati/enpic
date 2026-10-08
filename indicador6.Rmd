@@ -1,0 +1,408 @@
+---
+title: "Indicador 6: Nutrición Enteral Precoz"
+author: "Carmen Macías Portillo"
+date: "`r Sys.Date()`"
+output: 
+  prettydoc::html_pretty:
+    theme: tactile
+    toc: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+```{r}
+# Cargamos la librería 'haven', necesaria para cargar archivos .sav (SPSS)
+library(haven)
+# Cargamos el archivo .sav
+enpic <- read_sav("ENPIC_BMI_525.sav")
+```
+
+## **Indicador de Calidad 6** (**IQ6**): **Nutrición enteral precoz**
+
+Para evaluar la instauración precoz de la nutrición enteral en la unidad, el indicador se ha operativizado bajo los siguientes criterios técnicos:
+
+- **Población diana** ($N$): Para la operacionalización del IQ6 se consideraron los pacientes que recibieron nutrición enteral durante su estancia en UCI, identificados por la presencia de una fecha registrada en la variable `Inicio_NE`.
+
+- **Criterios de inclusión en el análisis**: Se incluyeron únicamente los pacientes con fechas válidas de ingreso en UCI (`INGUCI`) e inicio de nutrición enteral (`Inicio_NE`), siempre que el intervalo entre ambas fechas fuera interpretable y no negativo.
+
+- **Criterio de depuración clínica**: Se excluyeron del denominador los pacientes en los que la nutrición parenteral total (`Inicio_NPT`) se había iniciado cronológicamente antes que la nutrición enteral. Esta exclusión se aplicó como aproximación indirecta a una posible contraindicación inicial, imposibilidad temporal de uso de la vía digestiva o situación clínica que justificara el retraso de la nutrición enteral.
+
+- **Casos favorables** ($n$): El numerador se definió como el número de pacientes en los que la nutrición enteral se inició de forma precoz, es decir, dentro de las primeras 48 horas desde el ingreso en UCI.
+
+La proporción de cumplimiento se calculó como el cociente entre pacientes con inicio precoz de nutrición enteral y el total de pacientes evaluables tras la depuración clínica y cronológica.
+
+$$IQ6 = \left( \frac{\text{Nº de pacientes con NE iniciada en las primeras 48h}}{\text{Nº de pacientes evaluables con NE}} \right) \times 100$$
+
+Para cuantificar la precisión de la estimación se calculó el intervalo de confianza exacto binomial de Clopper-Pearson al 95%.
+
+```{r}
+library(lubridate); library(dplyr)
+
+# 1. Parseo de fechas y cálculos de tiempo
+# Definimos los posibles formatos en los que pueden venir anotadas las fechas
+formatos_fecha <- c("Ymd_HMS", "Ymd_HM", "dmy_HMS", "dmy_HM")
+
+pacientes_NE <- enpic %>%
+  # Nos quedamos solo con los pacientes que tienen registrada la NE
+  filter(!is.na(Inicio_NE)) %>%
+  mutate(
+    # Convertimos las fechas de texto a formato de fecha/hora procesable por R
+    Fecha_Ingreso = parse_date_time(INGUCI, orders = formatos_fecha),
+    Fecha_Inicio_NE = parse_date_time(Inicio_NE, orders = formatos_fecha),
+    Fecha_Inicio_NPT = parse_date_time(Inicio_NPT, orders = formatos_fecha),
+    # Calculamos cuántas horas pasaron desde el ingreso hasta el inicio de la NE
+    Horas_Retraso_NE = as.numeric(difftime(Fecha_Inicio_NE, Fecha_Ingreso, units = "hours")),
+    # Verificamos que las fechas tengan sentido (que la hora de inicio no sea anterior al ingreso)
+    Fecha_NE_valida = !is.na(Fecha_Ingreso) & !is.na(Fecha_Inicio_NE) & Horas_Retraso_NE >= 0,
+    # Comprobamos si el paciente recibió NPT antes que la NE
+    NPT_Previa = !is.na(Fecha_Inicio_NPT) & !is.na(Fecha_Inicio_NE) & Fecha_Inicio_NPT < Fecha_Inicio_NE,
+    # Definimos la variable objetivo: Inicio temprano en las primeras 48h
+    Inicio_NE_precoz = Fecha_NE_valida & Horas_Retraso_NE <= 48)
+
+# 2 Cálculo del Indicador de Calidad 6 (IQ6) e IC95%
+# Población evaluable: Filtramos para quedarnos solo con fechas válidas y sin NPT previa
+iq6 <- pacientes_NE %>% filter(Fecha_NE_valida, !NPT_Previa)
+
+# Calculamos el numerador y el denominador
+Numerador_IQ6 <- sum(iq6$Inicio_NE_precoz, na.rm = TRUE)
+Denominador_IQ6 <- nrow(iq6)
+
+# Porcentaje de cumplimiento del IQ6
+IQ6 <- round((Numerador_IQ6 / Denominador_IQ6) * 100, 2)
+
+# Calculamos el IC exacto binomial al 95%
+test_IQ6 <- binom.test(x = Numerador_IQ6, n = Denominador_IQ6, conf.level = 0.95)
+limite_inf_IQ6 <- round(test_IQ6$conf.int[1] * 100, 2)
+limite_sup_IQ6 <- round(test_IQ6$conf.int[2] * 100, 2)
+
+# Calculamos los incumplimientos (inicio tardío)
+NoCumple_IQ6 <- Denominador_IQ6 - Numerador_IQ6;
+porcentaje_no_cumple_IQ6 <- round((NoCumple_IQ6 / Denominador_IQ6) * 100, 2)
+
+# 3. Control de calidad y exclusiones del registro
+# Analizamos por qué han fallado los pacientes con fechas inválidas
+fechas_invalidas_IQ6 <- pacientes_NE %>% filter(!Fecha_NE_valida) %>% 
+  summarise(n_fechas_invalidas = n(), n_ingreso_no_parseado = sum(is.na(Fecha_Ingreso)), n_inicio_NE_no_parseado = sum(is.na(Fecha_Inicio_NE)), n_horas_negativas = sum(Horas_Retraso_NE < 0, na.rm = TRUE))
+
+# Contabilizamos los descartes por fechas o errores tipográficos
+n_pacientes_NE_total <- nrow(pacientes_NE)
+n_excluidos_fechas <- fechas_invalidas_IQ6$n_fechas_invalidas
+porcentaje_fechas_invalidas <- round((n_excluidos_fechas / n_pacientes_NE_total) * 100, 2)
+
+# Contabilizamos los descartes clínicos (NPT previa)
+n_NPT_previa <- pacientes_NE %>% filter(Fecha_NE_valida, NPT_Previa == TRUE) %>% nrow()
+
+# 4. Impresión de resultados
+print(paste("Número total de pacientes con NE registrada:", n_pacientes_NE_total)); print(paste("Pacientes excluidos por fechas no válidas:", n_excluidos_fechas)); print(paste("Pacientes excluidos por NPT previa a la NE:", n_NPT_previa)); print(paste("Número de pacientes evaluables para IQ6:", Denominador_IQ6)); print(paste("Número de pacientes con inicio precoz de NE:", Numerador_IQ6)); print(paste("IQ6:", Numerador_IQ6, "/", Denominador_IQ6, "=", IQ6, "%; IC95% [", limite_inf_IQ6, "% -", limite_sup_IQ6, "%]"))
+```
+
+```{r}
+library(dplyr); library(ggplot2); library(scales)
+
+# Construir tabla de resultados y variables de calidad
+n_NE_total <- n_pacientes_NE_total; n_fechas_invalidas <- n_excluidos_fechas
+df_iq6_plot <- tibble(Analisis = "Análisis depurado", Numerador = Numerador_IQ6, Denominador = Denominador_IQ6, Porcentaje = IQ6, IC_Inf = limite_inf_IQ6, IC_Sup = limite_sup_IQ6) %>% mutate(Incumplimiento = 100 - Porcentaje, Etiqueta = paste0(sprintf("%.2f", Porcentaje), "%\n", Numerador, "/", Denominador, " pacientes"), IC_label = paste0("IC95%: ", sprintf("%.2f", IC_Inf), "–", sprintf("%.2f", IC_Sup), "%"), Analisis = factor(Analisis, levels = "Análisis depurado"))
+
+# Construcción del gráfico IQ6 y renderizado
+grafico_iq6 <- ggplot(df_iq6_plot, aes(y = Analisis)) +
+  geom_segment(aes(x = 0, xend = Porcentaje, yend = Analisis), linewidth = 10, alpha = 0.30, color = "#4DB6AC") +
+  geom_segment(aes(x = Porcentaje, xend = 100, yend = Analisis), linewidth = 10, alpha = 0.18, color = "#D55E00") +
+  geom_errorbarh(aes(xmin = IC_Inf, xmax = IC_Sup), height = 0.16, linewidth = 1, color = "black") +
+  geom_point(aes(x = Porcentaje), size = 7, color = "#00796B") +
+  geom_vline(xintercept = 100, linetype = "dashed", linewidth = 0.9, color = "#B71C1C") +
+  geom_text(aes(x = Porcentaje, label = Etiqueta), nudge_y = 0.18, fontface = "bold", size = 4.5, color = "black") +
+  geom_text(aes(x = Porcentaje, label = IC_label), nudge_y = -0.18, size = 3.7, color = "grey25") +
+  annotate("text", x = 100, y = 1.35, label = "Estándar: 100%", hjust = 1.05, fontface = "bold", color = "#B71C1C", size = 4) +
+  scale_x_continuous(limits = c(0, 105), breaks = seq(0, 100, 20), labels = function(x) paste0(x, "%")) +
+  labs(title = "IQ6. Nutrición enteral precoz", subtitle = "Inicio de nutrición enteral en las primeras 48 horas desde el ingreso en UCI", x = "Cumplimiento del indicador", y = "", caption = paste0("Pacientes con NE registrada: n = ", n_NE_total, " | No evaluables por fechas inválidas/no interpretables: n = ", n_fechas_invalidas, "\nAnálisis depurado: excluye pacientes con NPT iniciada antes de la NE.")) +
+  theme_minimal(base_size = 13) + theme(plot.title = element_text(face = "bold", size = 16, hjust = 0.5), plot.subtitle = element_text(size = 10, hjust = 0.5), axis.text.y = element_text(face = "bold", color = "black", size = 12), axis.title.x = element_text(face = "bold"), panel.grid.major.y = element_blank(), panel.grid.minor = element_blank(), plot.caption = element_text(size = 8, hjust = 0), plot.margin = margin(10, 15, 10, 15))
+
+print(grafico_iq6)
+```
+
+El IQ6 evaluó el inicio precoz de la nutrición enteral, definido como la instauración de NE dentro de las primeras 48 horas desde el ingreso en UCI. De los **`r n_pacientes_NE_total` pacientes** con NE registrada, **`r n_excluidos_fechas`** fueron excluidos por presentar fechas inválidas, no parseables o cronológicamente no interpretables. Además, se excluyeron **`r n_NPT_previa` pacientes** en los que la NPT se había iniciado antes que la NE, al considerarse un subgrupo potencialmente no comparable, en el que podía existir una contraindicación inicial o una imposibilidad temporal de uso de la vía digestiva.
+
+Tras esta depuración, el denominador quedó constituido por **`r Denominador_IQ6` pacientes** evaluables. De ellos, **`r Numerador_IQ6` iniciaron la NE de forma precoz**, lo que supone un cumplimiento del indicador del **`r IQ6`%** —IC95% exacto binomial: **`r limite_inf_IQ6`–`r limite_sup_IQ6`%**—. Aunque el resultado queda por debajo del estándar teórico del 100%, indica que aproximadamente tres de cada cuatro pacientes evaluables recibieron NE dentro de la ventana temporal recomendada.
+
+Este cumplimiento es concordante con los datos descritos en la cohorte ENPIC, donde el inicio precoz de NE se situó en torno al 75%, lo que sugiere que el resultado observado refleja una práctica clínica comparable a la descrita en el ámbito multicéntrico nacional.
+
+### **Análisis univariante**
+
+Realizamos un análisis univariante comparativo según el cumplimiento del inicio precoz de la NE (< 48h), clasificando a los pacientes en dos grupos: inicio precoz e inicio tardío.
+
+- Para las **variables continuas** se aplican pruebas bivariantes en función de su distribución:
+
+  - **Mann-Whitney** para variables **asimétricas**, expresadas como mediana y rango intercuartílico.
+  
+  - **T-test** para variables con distribución **aproximadamente normal**, expresadas como media y desviación estándar.
+
+- Las **variables categóricas** se resumen mediante frecuencias absolutas y porcentajes, y se comparan entre grupos mediante la **prueba de chi-cuadrado**.
+
+Finalmente, se construye una tabla resumen que integra características basales, gravedad clínica, variables nutricionales, complicaciones y desenlaces, destacando los valores de p significativos o con tendencia estadística.
+
+```{r}
+library(dplyr); library(tidyr); library(knitr)
+
+# 0. Crear variable de grupo para el análisis univariante IQ6
+# Base utilizada: iq6, ya depurada previamente
+# Incluye pacientes con NE, fechas válidas y sin NPT previa a la NE
+iq6 <- iq6 %>% mutate(Grupo_Inicio_NE = factor(case_when(Inicio_NE_precoz == TRUE ~ "Inicio precoz (<48 h)", Inicio_NE_precoz == FALSE ~ "Inicio tardío", TRUE ~ NA_character_), levels = c("Inicio precoz (<48 h)", "Inicio tardío")))
+
+# Añadir n y % de cada grupo al encabezado de la tabla
+n_grupos_iq6 <- iq6 %>% filter(!is.na(Grupo_Inicio_NE)) %>% count(Grupo_Inicio_NE) %>% mutate(pct = n / sum(n) * 100, encabezado = paste0(as.character(Grupo_Inicio_NE), " (n = ", n, "; ", sprintf("%.1f", pct), "%)"))
+
+col_precoz_iq6 <- n_grupos_iq6$encabezado[n_grupos_iq6$Grupo_Inicio_NE == "Inicio precoz (<48 h)"]
+col_tardio_iq6 <- n_grupos_iq6$encabezado[n_grupos_iq6$Grupo_Inicio_NE == "Inicio tardío"]
+
+formatear_p <- function(p) ifelse(p < 0.001, "<0.001", as.character(round(p, 3)))
+
+# 1. Función para variables asimétricas: Mediana [Q1-Q3] + Mann-Whitney
+crear_fila_mw_iq6 <- function(data, var, nom) {
+  d <- data %>% filter(!is.na(.data[[var]]), !is.na(Grupo_Inicio_NE))
+  t <- d %>% group_by(Grupo_Inicio_NE) %>% summarise(v = sprintf("%.1f [%.1f - %.1f]", median(.data[[var]], na.rm = TRUE), quantile(.data[[var]], 0.25, na.rm = TRUE), quantile(.data[[var]], 0.75, na.rm = TRUE)), .groups = "drop") %>% pivot_wider(names_from = Grupo_Inicio_NE, values_from = v)
+  p <- wilcox.test(as.formula(paste(var, "~ Grupo_Inicio_NE")), data = d)$p.value
+  t %>% mutate(Variable = nom, p = formatear_p(p)) %>% select(Variable, everything())}
+
+# 2. Función para variables normales: Media ± DE + T-test
+crear_fila_ttest_iq6 <- function(data, var, nom) {
+  d <- data %>% filter(!is.na(.data[[var]]), !is.na(Grupo_Inicio_NE))
+  t <- d %>% group_by(Grupo_Inicio_NE) %>% summarise(v = sprintf("%.1f ± %.1f", mean(.data[[var]], na.rm = TRUE), sd(.data[[var]], na.rm = TRUE)), .groups = "drop") %>% pivot_wider(names_from = Grupo_Inicio_NE, values_from = v)
+  p <- t.test(as.formula(paste(var, "~ Grupo_Inicio_NE")), data = d)$p.value
+  t %>% mutate(Variable = nom, p = formatear_p(p)) %>% select(Variable, everything())}
+
+# 3. Función para variables categóricas con varias categorías
+crear_fila_chi_iq6 <- function(data, var, nom, niveles, etiquetas) {
+  d <- data %>% filter(!is.na(.data[[var]]), !is.na(Grupo_Inicio_NE)) %>% mutate(vc = factor(.data[[var]], levels = niveles, labels = etiquetas)) %>% filter(!is.na(vc))
+  tabla_test <- table(d$vc, d$Grupo_Inicio_NE)
+  p <- if (any(tabla_test < 5)) fisher.test(tabla_test)$p.value else chisq.test(tabla_test)$p.value
+  t <- d %>% count(Grupo_Inicio_NE, vc) %>% group_by(Grupo_Inicio_NE) %>% mutate(v = sprintf("%d (%.1f%%)", n, n / sum(n) * 100)) %>% select(-n) %>% pivot_wider(names_from = Grupo_Inicio_NE, values_from = v)
+  t %>% mutate(Variable = paste0(nom, ": ", vc), p = ifelse(row_number() == 1, formatear_p(p), "")) %>% select(-vc) %>% select(Variable, everything())}
+
+# 4. Función para variables categóricas Sí/No mostrando solo la categoría "Sí"
+crear_fila_chi_si_iq6 <- function(data, var, nom, niveles, etiquetas, categoria_mostrar = "Sí") {
+  d <- data %>% filter(!is.na(.data[[var]]), !is.na(Grupo_Inicio_NE)) %>% mutate(vc = factor(.data[[var]], levels = niveles, labels = etiquetas)) %>% filter(!is.na(vc))
+  tabla_test <- table(d$vc, d$Grupo_Inicio_NE)
+  p <- if (any(tabla_test < 5)) fisher.test(tabla_test)$p.value else chisq.test(tabla_test)$p.value
+  d %>% count(Grupo_Inicio_NE, vc) %>% group_by(Grupo_Inicio_NE) %>% mutate(v = sprintf("%d (%.1f%%)", n, n / sum(n) * 100)) %>% filter(vc == categoria_mostrar) %>% select(-n, -vc) %>% pivot_wider(names_from = Grupo_Inicio_NE, values_from = v) %>% mutate(Variable = paste0(nom, ": ", categoria_mostrar), p = formatear_p(p)) %>% select(Variable, everything())}
+
+# Transformamos la variable del Tipo de Nutrición
+iq6 <- iq6 %>% mutate(TIPO_SN_IQ6 = factor(case_when(TIPO_SN_Grupo == 1 ~ "NE exclusiva", TIPO_SN_Grupo %in% c(3) ~ "NE + NPT posterior", TRUE ~ NA_character_), levels = c("NE exclusiva", "NE + NPT posterior")))
+
+# 5. Tabla final univariante ensamblada por bloques clínicos
+tabla_univariante_iq6 <- bind_rows(
+  # Características basales y gravedad
+  crear_fila_mw_iq6(iq6, "EDAD", "Edad, años"), crear_fila_mw_iq6(iq6, "BMI", "BMI, kg/m²"), crear_fila_ttest_iq6(iq6, "APACHEII", "APACHE II"), crear_fila_ttest_iq6(iq6, "SAPSII", "SAPS II"), crear_fila_mw_iq6(iq6, "SOFA1", "SOFA admisión"), crear_fila_mw_iq6(iq6, "NUTRIC_Score", "NUTRIC Score"), crear_fila_chi_iq6(iq6, "SEXO", "Sexo", niveles = c(1, 2), etiquetas = c("Hombre", "Mujer")),
+  
+  # Antecedentes
+  crear_fila_chi_si_iq6(iq6, "AHTA", "Antecedentes hipertensión", niveles = c(0, 1), etiquetas = c("No", "Sí")), crear_fila_chi_si_iq6(iq6, "ADBTM", "Antecedentes diabetes mellitus", niveles = c(0, 1), etiquetas = c("No", "Sí")), crear_fila_chi_si_iq6(iq6, "AEPOC", "Antecedentes EPOC", niveles = c(0, 1), etiquetas = c("No", "Sí")), crear_fila_chi_si_iq6(iq6, "ACARDIOP", "Antecedentes IAM", niveles = c(0, 1), etiquetas = c("No", "Sí")), crear_fila_chi_si_iq6(iq6, "ACIRROSIS", "Enfermedad hepática crónica", niveles = c(0, 1), etiquetas = c("No", "Sí")), crear_fila_chi_si_iq6(iq6, "AIRC", "Fallo renal crónico", niveles = c(0, 1), etiquetas = c("No", "Sí")), crear_fila_chi_si_iq6(iq6, "AINMUNO", "Antecedentes inmunosupresión", niveles = c(0, 1), etiquetas = c("No", "Sí")), crear_fila_chi_si_iq6(iq6, "ANEOPLAS", "Antecedentes neoplasia", niveles = c(0, 1), etiquetas = c("No", "Sí")),
+  
+  # Perfil clínico-nutricional
+  crear_fila_chi_iq6(iq6, "STATUS3", "Tipo de paciente", niveles = c(0, 1, 2), etiquetas = c("Quirúrgico", "Médico", "Trauma")), crear_fila_chi_si_iq6(iq6, "VGSING2", "Paciente con RN basado en VGS", niveles = c(1, 2), etiquetas = c("No", "Sí")), crear_fila_chi_si_iq6(iq6, "NUTRISCOR2", "Paciente con RN basado en NUTRIC Score", niveles = c(0, 1), etiquetas = c("No", "Sí")), crear_fila_mw_iq6(iq6, "TOTAL_DIAS_SN", "Días en terapia nutricional"), crear_fila_ttest_iq6(iq6, "Kcal_14d", "Media kcal/kg/día"), crear_fila_ttest_iq6(iq6, "gPROT_14d", "Media g proteína/kg/día"), crear_fila_chi_iq6(iq6, "TIPO_SN_IQ6", "Tipo de soporte nutricional", niveles = c("NE exclusiva", "NE + NPT posterior"), etiquetas = c("NE exclusiva", "NE + NPT posterior")),
+  
+  # Complicaciones digestivas y clínicas
+  crear_fila_chi_si_iq6(iq6, "ANY_COMPLICATION", "Cualquier complicación", niveles = c(0, 1), etiquetas = c("No", "Sí")), crear_fila_chi_si_iq6(iq6, "PVRGM100", "Volumen de residuo gástrico alto (>500 mL)", niveles = c(0, 1), etiquetas = c("No", "Sí")), crear_fila_chi_si_iq6(iq6, "PDANE", "Diarrea", niveles = c(0, 1), etiquetas = c("No", "Sí")), crear_fila_chi_si_iq6(iq6, "PVOMITO", "Vómitos", niveles = c(0, 1), etiquetas = c("No", "Sí")), crear_fila_chi_si_iq6(iq6, "PBRONCOAS", "Broncoaspiración", niveles = c(0, 1), etiquetas = c("No", "Sí")), crear_fila_chi_si_iq6(iq6, "PISQUINT", "Isquemia mesentérica", niveles = c(0, 1), etiquetas = c("No", "Sí")),
+  
+  # Soporte y outcomes
+  crear_fila_chi_si_iq6(iq6, "VM", "Pacientes con ventilación mecánica", niveles = c(0, 1), etiquetas = c("No", "Sí")), crear_fila_mw_iq6(iq6, "DIASVM", "Días de ventilación mecánica"), crear_fila_chi_si_iq6(iq6, "NEC_NA", "Necesidad de noradrenalina", niveles = c(0, 1), etiquetas = c("No", "Sí")), crear_fila_chi_si_iq6(iq6, "TRR", "Necesidad de TRR", niveles = c(0, 1), etiquetas = c("No", "Sí")), crear_fila_chi_si_iq6(iq6, "INFRESP", "Infección del tracto respiratorio", niveles = c(0, 1), etiquetas = c("No", "Sí")), crear_fila_chi_si_iq6(iq6, "INFVIA", "Infección relacionada con el catéter", niveles = c(0, 1), etiquetas = c("No", "Sí")),
+  
+  # Laboratorio, estancia y mortalidad
+  crear_fila_chi_si_iq6(iq6, "HYPER_UREA", "Hiperuremia", niveles = c(0, 1), etiquetas = c("No", "Sí")), crear_fila_chi_si_iq6(iq6, "HYPER_TRIGLI", "Hipertrigliceridemia", niveles = c(0, 1), etiquetas = c("No", "Sí")), crear_fila_chi_si_iq6(iq6, "LIVER_DYSFUNCTION", "Disfunción hepática", niveles = c(0, 1), etiquetas = c("No", "Sí")), crear_fila_chi_si_iq6(iq6, "CHOLESTASIS", "Colestasis", niveles = c(0, 1), etiquetas = c("No", "Sí")), crear_fila_chi_si_iq6(iq6, "MIXED_PATTERN", "Patrón mixto hepático", niveles = c(0, 1), etiquetas = c("No", "Sí")), crear_fila_mw_iq6(iq6, "DIAS_UCI", "Días en UCI"), crear_fila_mw_iq6(iq6, "DIAS_HOSP", "Días de hospitalización"), crear_fila_chi_si_iq6(iq6, "MUERTO28", "Mortalidad a 28 días", niveles = c(0, 1), etiquetas = c("No", "Sí"))
+)
+
+# 6. Limpieza, formato de p-valores y renderizado de la tabla
+tabla_univariante_iq6[is.na(tabla_univariante_iq6)] <- "-"
+tabla_univariante_iq6 %>% 
+  mutate(p_num = suppressWarnings(as.numeric(ifelse(p == "<0.001", "0.0009", p))), p = case_when(!is.na(p_num) & p_num <= 0.05 ~ paste0("<b><u>", p, "</u></b>"), !is.na(p_num) & p_num <= 0.20 ~ paste0("<b>", p, "</b>"), TRUE ~ p)) %>% select(-p_num) %>% rename(!!col_precoz_iq6 := `Inicio precoz (<48 h)`, !!col_tardio_iq6 := `Inicio tardío`) %>% knitr::kable(escape = FALSE, caption = "Características clínicas, nutricionales y outcomes según inicio precoz de nutrición enteral")
+```
+
+En el análisis univariante, los pacientes con inicio precoz y tardío de nutrición enteral mostraron un perfil clínico basal globalmente comparable. No se observaron diferencias estadísticamente significativas en edad, BMI, gravedad al ingreso, comorbilidades, tipo de paciente, riesgo nutricional, soporte orgánico, complicaciones digestivas, estancia en UCI, estancia hospitalaria ni mortalidad a 28 días.
+
+La única diferencia estadísticamente significativa fue el **mayor aporte proteico medio** en el grupo con inicio precoz de NE —0,8 ± 0,3 frente a 0,7 ± 0,3 g/kg/día; **p = 0,012**—. Además, se observaron tendencias hacia un **mayor aporte calórico medio** —15,5 ± 5,1 frente a 14,3 ± 5,1 kcal/kg/día; **p = 0,058**— y una **menor necesidad posterior de NPT complementaria** —9,2% frente a 16,5%; **p = 0,087**— en los pacientes con inicio precoz. También se apreció una **mayor duración de la terapia nutricional** en este grupo —11,5 [6,0–22,0] frente a 9,0 [5,0–18,0] días; **p = 0,131**—, así como una **mayor frecuencia de diarrea** —12,6% frente a 6,6%; p = **0,169**—, ambas sin significación estadística.
+
+En conjunto, estos resultados sugieren que el inicio precoz de la NE no se asoció con diferencias relevantes en el perfil clínico inicial ni con mejores desenlaces clínicos directos en esta cohorte depurada. Sin embargo, sí parece relacionarse con una mejor adecuación posterior del soporte nutricional, especialmente en términos de aporte proteico, y con una menor tendencia a requerir NPT añadida. Esta asociación debe interpretarse con cautela, dado el carácter observacional del análisis y la posibilidad de que los pacientes con inicio precoz fueran también aquellos con una evolución digestiva o nutricional más favorable.
+
+### **Análisis multivariante**
+#### **Regresión logística binaria multivariable**
+
+Para el análisis multivariable del IQ6 se construyó una regresión logística binaria tomando como variable dependiente el inicio tardío de la nutrición enteral, frente al inicio precoz como categoría de referencia. Se incluyeron como variables candidatas aquellas que en el análisis univariante alcanzaron un valor de p < 0,20. Dado que varias de estas variables corresponden a la evolución posterior del soporte nutricional, el modelo no debe interpretarse como un modelo predictivo basal estricto, sino como un análisis de factores asociados al patrón clínico-nutricional de los pacientes con inicio tardío de NE.
+
+```{r multivariable analysis IQ6}
+library(dplyr); library(tidyr); library(broom); library(pROC); library(purrr); library(knitr)
+
+# 1. Preparación de datos
+# Variable dependiente: 0 = Inicio precoz / 1 = Inicio tardío
+datos_modelos_iq6 <- iq6 %>% mutate(Inicio_Tardio_NE = factor(case_when(Inicio_NE_precoz == TRUE ~ 0, Inicio_NE_precoz == FALSE ~ 1, TRUE ~ NA_real_), levels = c(0, 1), labels = c("Precoz", "Tardio")), TIPO_SN_IQ6 = factor(case_when(TIPO_SN_Grupo == 1 ~ "NE exclusiva", TIPO_SN_Grupo == 3 ~ "NE + NPT posterior", TRUE ~ NA_character_), levels = c("NE exclusiva", "NE + NPT posterior"))) %>% drop_na(Inicio_Tardio_NE)
+
+# 2. Variables candidatas: Variables con p < 0,20 en el univariante
+variables_candidatas_iq6 <- c("TOTAL_DIAS_SN", "Kcal_14d", "gPROT_14d", "TIPO_SN_IQ6", "PDANE")
+
+# 3. Función para evaluar modelos logísticos binarios
+evaluar_modelo_iq6 <- function(vars, data) {tryCatch({d_mod <- data %>% select(all_of(c("Inicio_Tardio_NE", vars))) %>% drop_na()
+    if (nrow(d_mod) < 80 || length(unique(d_mod$Inicio_Tardio_NE)) < 2) return(NULL)
+    mod <- glm(as.formula(paste("Inicio_Tardio_NE ~", paste(vars, collapse = " + "))), data = d_mod, family = binomial)
+    p_vals <- tidy(mod) %>% filter(term != "(Intercept)")
+    roc_obj <- roc(response = d_mod$Inicio_Tardio_NE, predictor = predict(mod, type = "response"), levels = c("Precoz", "Tardio"), direction = "<", quiet = TRUE)
+    data.frame(Variables = paste(vars, collapse = " + "), Num_variables = length(vars), N_modelo = nrow(d_mod), AIC = AIC(mod), AUC = as.numeric(auc(roc_obj)), N_significativas = sum(p_vals$p.value <= 0.05, na.rm = TRUE), N_tendencia = sum(p_vals$p.value <= 0.20, na.rm = TRUE))}, error = function(e) NULL)}
+
+# 4. Combinaciones de variables
+# Como hay 5 variables candidatas, se exploran modelos de 2 a 5 variables
+combinaciones_iq6 <- unlist(lapply(2:min(5, length(variables_candidatas_iq6)), function(k) {combn(variables_candidatas_iq6, k, simplify = FALSE)}), recursive = FALSE)
+
+# 5. Evaluación masiva de modelos
+resultados_modelos_iq6 <- map_dfr(combinaciones_iq6, evaluar_modelo_iq6, data = datos_modelos_iq6)
+
+# 6. Top 15 modelos por menor AIC
+resultados_modelos_iq6 %>% arrange(AIC) %>% slice(1:15) %>% kable(digits = 3, caption = "Top 15 modelos IQ6 por menor AIC")
+
+# 7. Top 15 modelos por mayor AUC
+resultados_modelos_iq6 %>% arrange(desc(AUC)) %>% slice(1:15) %>% kable(digits = 3, caption = "Top 15 modelos IQ6 por mayor AUC")
+
+# 8. Ranking equilibrado: AIC + AUC + parsimonia
+mejores_eq_iq6 <- resultados_modelos_iq6 %>% mutate(rank_comb = rank(AIC) + rank(-AUC) + Num_variables) %>% arrange(rank_comb) %>% slice(1:15)
+
+kable(mejores_eq_iq6, digits = 3, caption = "Top 15 modelos IQ6: equilibrio AIC, AUC y parsimonia")
+
+# 9. Ajuste del modelo final
+mejor_formula_iq6 <- mejores_eq_iq6$Variables[1]
+
+modelo_final_iq6 <- glm(as.formula(paste("Inicio_Tardio_NE ~", mejor_formula_iq6)), data = datos_modelos_iq6, family = binomial)
+
+# 10. Tabla de resultados del modelo final
+# IC95% tipo Wald para evitar problemas de convergencia con confint perfilado
+tabla_modelo_final_iq6 <- tidy(modelo_final_iq6) %>% filter(term != "(Intercept)") %>% mutate(OR = exp(estimate), IC_inf = exp(estimate - 1.96 * std.error), IC_sup = exp(estimate + 1.96 * std.error), p = ifelse(p.value < 0.001, "<0.001", sprintf("%.3f", p.value)), OR_IC95 = sprintf("%.2f [%.2f - %.2f]", OR, IC_inf, IC_sup), Variable = recode(term, "TOTAL_DIAS_SN" = "Días en terapia nutricional", "Kcal_14d" = "Media kcal/kg/día", "gPROT_14d" = "Media g proteína/kg/día", "TIPO_SN_IQ6NE + NPT posterior" = "NE + NPT posterior vs NE exclusiva", "PDANE1" = "Diarrea"), Comparacion = "Inicio tardío vs inicio precoz de NE") %>% select(Comparacion, Variable, OR_IC95, p)
+
+kable(tabla_modelo_final_iq6, caption = "Modelo final de factores asociados a inicio tardío de nutrición enteral")
+
+# 11. Métricas del modelo final
+mejores_eq_iq6 %>% slice(1) %>% select(Variables, Num_variables, N_modelo, AIC, AUC, N_significativas, N_tendencia) %>% kable(digits = 3, caption = "Métricas del modelo final IQ6")
+```
+
+Tras explorar de forma sistemática las combinaciones posibles de variables candidatas, el modelo final seleccionado incluyó el **aporte proteico medio**, el **tipo de soporte nutricional** y la presencia de **diarrea**. Este modelo incluyó 342 pacientes, presentó un **AIC de 391,635** y un **AUC de 0,618**, lo que indica una capacidad discriminativa limitada.
+
+En el modelo ajustado, un mayor aporte proteico medio se asoció con menor probabilidad de inicio tardío de NE —**OR 0,38**; IC95% 0,17–0,85; **p = 0,018**—. Por el contrario, la necesidad de NPT posterior a la NE se asoció con mayor probabilidad de inicio tardío —**OR 2,22**; IC95% 1,08–4,56; **p = 0,030**—. La diarrea mostró una asociación inversa con el inicio tardío, aunque sin alcanzar significación estadística —**OR 0,46**; IC95% 0,18–1,17; **p = 0,103**—, por lo que debe interpretarse únicamente como una tendencia exploratoria.
+
+En conjunto, estos resultados sugieren que los pacientes con inicio tardío de NE presentan un patrón evolutivo caracterizado por peor adecuación proteica y mayor necesidad de soporte parenteral complementario. No obstante, la capacidad discriminativa global del modelo es limitada y las asociaciones observadas no deben interpretarse como predictores causales o basales del retraso, sino como características asociadas a la evolución nutricional posterior de este grupo.
+
+No se realizó un análisis de regresión de Cox para este indicador, ya que la variable de interés —inicio precoz o tardío de la nutrición enteral— no constituye propiamente un evento de supervivencia observado durante el seguimiento, sino una clasificación dicotómica definida a partir del intervalo transcurrido entre el ingreso en UCI y el inicio de la NE. Además, la estancia en UCI es posterior al momento en que se define el cumplimiento o incumplimiento del indicador, por lo que su uso como escala temporal podría introducir una interpretación temporal inadecuada. Por este motivo, se consideró metodológicamente más apropiado emplear regresión logística binaria para identificar factores asociados al patrón de inicio tardío de la NE.
+
+##### **Curva ROC**
+
+La capacidad discriminativa del modelo multivariable se evaluó mediante curva ROC, utilizando las probabilidades predichas de inicio tardío de nutrición enteral obtenidas a partir del modelo logístico final. El modelo incluyó como predictores el aporte proteico medio, el tipo de soporte nutricional y la presencia de diarrea, y se evaluó sobre 342 pacientes con datos completos.
+
+```{r}
+library(dplyr); library(pROC); library(ggplot2); library(knitr)
+
+# 1. Base usada por el modelo final
+vars_modelo_iq6 <- all.vars(formula(modelo_final_iq6))[-1]
+datos_roc_iq6 <- datos_modelos_iq6 %>% select(Inicio_Tardio_NE, all_of(vars_modelo_iq6)) %>% drop_na()
+
+# 2. Probabilidades predichas de inicio tardío
+datos_roc_iq6$prob_inicio_tardio <- predict(modelo_final_iq6, newdata = datos_roc_iq6, type = "response")
+
+# 3. Objeto ROC
+roc_iq6 <- roc(response = datos_roc_iq6$Inicio_Tardio_NE, predictor = datos_roc_iq6$prob_inicio_tardio, levels = c("Precoz", "Tardio"), direction = "<", ci = TRUE, quiet = TRUE)
+
+# 4. AUC e IC95%
+auc_iq6 <- auc(roc_iq6); ic_auc_iq6 <- ci.auc(roc_iq6)
+tabla_auc_iq6 <- data.frame(Modelo = "Modelo multivariable IQ6", Comparacion = "Inicio tardío vs inicio precoz de NE", N = nrow(datos_roc_iq6), AUC_IC95 = sprintf("%.3f [%.3f - %.3f]", as.numeric(auc_iq6), as.numeric(ic_auc_iq6[1]), as.numeric(ic_auc_iq6[3])))
+kable(tabla_auc_iq6, caption = "Área bajo la curva ROC del modelo multivariable IQ6")
+
+# 5. Coordenadas para ggplot
+roc_df_iq6 <- data.frame(Sensibilidad = roc_iq6$sensitivities, Especificidad = roc_iq6$specificities) %>% mutate(FPR = 1 - Especificidad)
+
+# 6. Gráfico ROC
+grafico_roc_iq6 <- ggplot(roc_df_iq6, aes(x = FPR, y = Sensibilidad)) + geom_line(linewidth = 1.2, color = "#00796B") + geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "grey50") + coord_equal() + scale_x_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.2)) + scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.2)) + labs(title = "Curva ROC del modelo multivariable IQ6", subtitle = paste0("Inicio tardío vs inicio precoz de NE | AUC = ", sprintf("%.3f", as.numeric(auc_iq6)), " [IC95% ", sprintf("%.3f", as.numeric(ic_auc_iq6[1])), "–", sprintf("%.3f", as.numeric(ic_auc_iq6[3])), "]"), x = "1 - Especificidad", y = "Sensibilidad", caption = paste0("Modelo: ", mejor_formula_iq6, "\nEvento modelado: inicio tardío de nutrición enteral.")) + theme_minimal(base_size = 13) + theme(plot.title = element_text(face = "bold", size = 16, hjust = 0.5), plot.subtitle = element_text(size = 10, hjust = 0.5), axis.title = element_text(face = "bold"), panel.grid.minor = element_blank(), plot.caption = element_text(size = 8, hjust = 0))
+
+print(grafico_roc_iq6)
+```
+
+El área bajo la curva del modelo multivariable fue de **0,618** —IC95%: 0,552–0,684—, lo que indica una capacidad discriminativa limitada para diferenciar a los pacientes con inicio tardío de NE frente a aquellos con inicio precoz. Aunque el intervalo de confianza se sitúa por encima de 0,50, lo que sugiere una discriminación superior al azar, el rendimiento global del modelo es bajo. Por tanto, el modelo debe interpretarse como un análisis explicativo/asociativo del patrón clínico-nutricional asociado al inicio tardío de NE, y no como una herramienta predictiva robusta.
+
+### **Mortalidad a los 28 días**
+
+```{r}
+library(dplyr); library(survival); library(survminer); library(knitr)
+
+# Tiempo: ESTADA28 | Evento: MUERTO28 | Grupos: Inicio precoz / Inicio tardío de NE
+
+# 1. Preparar base
+datos_km_iq6 <- iq6 %>% mutate(Grupo_Inicio_NE_KM = factor(case_when(Inicio_NE_precoz == TRUE ~ "Inicio precoz (<48 h)", Inicio_NE_precoz == FALSE ~ "Inicio tardío", TRUE ~ NA_character_), levels = c("Inicio precoz (<48 h)", "Inicio tardío")), Evento_Muerte28 = case_when(MUERTO28 == 1 ~ 1, MUERTO28 == 0 ~ 0, TRUE ~ NA_real_)) %>% filter(!is.na(Grupo_Inicio_NE_KM), !is.na(ESTADA28), !is.na(Evento_Muerte28))
+
+# 2. Comprobar n y eventos por grupo
+datos_km_iq6 %>% group_by(Grupo_Inicio_NE_KM) %>% summarise(n = n(), muertes_28d = sum(Evento_Muerte28 == 1, na.rm = TRUE), mortalidad_28d = round(mean(Evento_Muerte28 == 1, na.rm = TRUE) * 100, 1), .groups = "drop") %>% kable(caption = "Mortalidad a 28 días según inicio precoz de nutrición enteral")
+
+# 3. Ajustar Kaplan-Meier y test de log-rank
+km_iq6 <- survfit(Surv(ESTADA28, Evento_Muerte28) ~ Grupo_Inicio_NE_KM, data = datos_km_iq6)
+logrank_iq6 <- survdiff(Surv(ESTADA28, Evento_Muerte28) ~ Grupo_Inicio_NE_KM, data = datos_km_iq6)
+p_logrank_iq6 <- 1 - pchisq(logrank_iq6$chisq, length(logrank_iq6$n) - 1); p_logrank_iq6_txt <- ifelse(p_logrank_iq6 < 0.001, "<0.001", sprintf("%.3f", p_logrank_iq6))
+
+# 4. Gráfico Kaplan-Meier según inicio precoz de NE
+ggsurvplot(km_iq6, data = datos_km_iq6, risk.table = TRUE, pval = paste0("Log-rank p = ", p_logrank_iq6_txt), conf.int = FALSE, censor = TRUE, xlab = "Días de seguimiento", ylab = "Supervivencia acumulada", title = "Supervivencia a 28 días según inicio de nutrición enteral", legend.title = "Inicio de NE", legend.labs = c("Inicio precoz (<48 h)", "Inicio tardío"), break.time.by = 7, xlim = c(0, 28), risk.table.height = 0.25, ggtheme = theme_minimal())
+```
+
+En el análisis de supervivencia a 28 días mediante Kaplan-Meier, los pacientes con inicio precoz de nutrición enteral presentaron una mortalidad del **26,8%** —68/254 pacientes—, frente al **31,9%** —29/91 pacientes— en el grupo con inicio tardío. Aunque la mortalidad fue numéricamente superior en los pacientes con inicio tardío, las curvas de supervivencia acumulada no mostraron diferencias estadísticamente significativas entre ambos grupos según el test de log-rank —**p = 0,437**—.
+
+Por tanto, en este análisis no ajustado, el inicio tardío de la nutrición enteral no se asoció de forma significativa con diferencias en la supervivencia a 28 días. Este resultado es coherente con el análisis univariante, en el que tampoco se observaron diferencias significativas en mortalidad a 28 días entre ambos grupos.
+
+### **Conclusión Indicador de Calidad 6** (**IQ6**)
+
+En conjunto, el análisis del IQ6 evidencia un **cumplimiento aceptable**, **aunque claramente mejorable**, del inicio precoz de la nutrición enteral (NE) en la cohorte evaluada. Tras la depuración clínica y cronológica de los registros, el **73,62%** de los pacientes evaluables inició la nutrición enteral dentro de las primeras 48 horas desde el ingreso en UCI (254/345 pacientes; IC95%: 68,64-78,20%).
+
+El resultado indica que aproximadamente **tres de cada cuatro pacientes** recibieron NE dentro de la ventana temporal recomendada. Por tanto, el problema principal no parece ser una ausencia generalizada de instauración precoz, sino la persistencia de un subgrupo relevante (aproximadamente una cuarta parte) en el que el inicio se retrasa más allá de las primeras 48 horas.
+
+La distribución de la cohorte depurada se divide en:
+
+- **Inicio precoz de NE** (**73,62%**): Patrón mayoritario de cumplimiento del indicador.
+
+- **Inicio tardío de NE** (**26,38%**): Subgrupo que concentra el margen principal de mejora asistencial.
+
+**Caracterización de los grupos según inicio de NE**
+
+Los pacientes con inicio precoz y tardío presentaron un **perfil clínico basal globalmente comparable**. No se observaron diferencias significativas en edad, BMI, gravedad al ingreso, comorbilidades, tipo de paciente, riesgo nutricional, soporte orgánico, complicaciones digestivas, estancias ni mortalidad a 28 días.
+
+La diferencia más relevante fue de naturaleza **nutricional**:
+
+- Los pacientes con inicio precoz alcanzaron un **mayor aporte proteico medio** (*0,8 ± 0,3 frente a 0,7 ± 0,3 g/kg/día; p = 0,012*).
+
+- Se observaron *tendencias* hacia un mayor aporte calórico medio y una menor necesidad posterior de NPT complementaria en este grupo.
+
+Por tanto, el inicio precoz de la NE no parece identificar a un grupo basalmente menos grave, sino a pacientes que posteriormente logran una **evolución nutricional más favorable**, especialmente en adecuación proteica.
+
+**Respaldos del modelo multivariable**
+
+El modelo multivariable (que incluyó el aporte proteico medio, el tipo de soporte y la presencia de diarrea) reforzó esta interpretación:
+
+- Un **mayor aporte proteico medio** se asoció con *menor* probabilidad de inicio tardío de NE (*OR 0,38; IC95% 0,17–0,85; p = 0,018*).
+
+- La **necesidad de NPT posterior** se asoció con *mayor* probabilidad de inicio tardío (*OR 2,22; IC95% 1,08–4,56; p = 0,030*).
+
+Estos hallazgos sugieren que el inicio tardío de NE se integra dentro de un patrón evolutivo de peor adecuación nutricional. Sin embargo, el modelo presentó una **capacidad discriminativa limitada** (*AUC 0,618; IC95%: 0,552–0,684*), por lo que no debe interpretarse como una herramienta predictiva robusta ni causal.
+
+**Auditoría clínica y oportunidades de mejora**
+
+Desde la perspectiva de calidad asistencial, el IQ6 señala una práctica consolidada pero susceptible de mejora. La prioridad es **reducir el porcentaje de pacientes** que inician la NE después de las 48 horas.
+
+Las principales oportunidades de mejora serían:
+
+1. **Reforzar la identificación precoz** de pacientes candidatos a NE desde el ingreso en UCI.
+
+2. **Revisar sistemáticamente** las causas de retraso en el inicio de la vía enteral.
+
+3. **Diferenciar** los retrasos clínicamente justificados de los potencialmente evitables.
+
+4. **Protocolizar la reevaluación diaria** de la posibilidad de iniciar NE en pacientes inicialmente no candidatos.
+
+5. **Monitorizar** si el retraso en la NE se acompaña de peor progresión calórico-proteica posterior.
+
+*Dado que el inicio tardío se asoció con mayor necesidad de NPT complementaria*, *sería útil revisar si ciertos pacientes se beneficiarían de progresiones enterales más estructuradas o criterios más claros para activar el soporte complementario*.
+
+**Impacto en mortalidad y relevancia del indicador**
+
+La mortalidad a 28 días fue numéricamente superior en el grupo con inicio tardío (31,9% frente a 26,8%), pero esta diferencia **no alcanzó significación estadística** en el análisis de Kaplan-Meier/log-rank (*p = 0,437*). En esta cohorte, el inicio tardío no se asoció con peor supervivencia a corto plazo.
+
+Esta ausencia de asociación con la mortalidad **no resta relevancia clínica** al indicador. El IQ6 evalúa la calidad, oportunidad y continuidad del soporte nutricional temprano, no un desenlace pronóstico aislado. El hallazgo más importante es la **asociación entre inicio precoz y mejor adecuación nutricional posterior**.
+
+En consecuencia, la mejora del indicador debe orientarse a reducir los inicios tardíos potencialmente evitables y a garantizar que la NE precoz se traduzca en una progresión efectiva del aporte, especialmente proteico.
+
