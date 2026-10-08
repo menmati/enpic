@@ -1,0 +1,148 @@
+---
+title: "Indicador 16: Profilaxis de la Úlcera por Estrés en Pacientes Críticos"
+author: "Carmen Macías Portillo"
+date: "`r Sys.Date()`"
+output: 
+  prettydoc::html_pretty:
+    theme: tactile
+    toc: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+```{r}
+# Cargamos la librería 'haven', necesaria para cargar archivos .sav (SPSS)
+library(haven)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+# Cargamos el archivo .sav
+enpic <- read_sav("ENPIC_BMI_525.sav")
+```
+
+## **Indicador de Calidad 16** (**IQ16**): Profilaxis de la úlcera por estrés en pacientes críticos
+
+Para evaluar la adecuación de la profilaxis farmacológica de la hemorragia gastrointestinal por estrés en la unidad, el indicador se ha operativizado bajo los siguientes criterios técnicos:
+
+- **Población diana** ($N$): Para la operacionalización del IQ16, se consideró como población diana la totalidad de la cohorte ENPIC analizada ($n=525$). Aunque el indicador se vincula conceptualmente a los pacientes críticos con nutrición enteral, el análisis se planteó como una **auditoría de adecuación clínica de la profilaxis antiulcerosa en toda la cohorte UCI**, dado que la ausencia de nutrición enteral constituye precisamente uno de los criterios de riesgo de hemorragia gastrointestinal.
+
+- **Casos favorables** ($n$): El numerador se definió como el número de pacientes con criterios clínicos de riesgo de hemorragia gastrointestinal que recibieron profilaxis farmacológica. Dado que la unidad aplica una política de **prescripción universal** de protectores gástricos, el numerador se asumió como completo de acuerdo con la práctica asistencial declarada por la jefatura.
+
+- **Denominador clínico** ($N$): El denominador se construyó identificando a los pacientes con al menos un criterio objetivo de riesgo de hemorragia gastrointestinal: ausencia de nutrición enteral, coagulopatía, shock o fracaso renal agudo.
+
+- **Auditoría complementaria**: De forma adicional, se cuantificó el número de pacientes sin criterios de riesgo objetivables que, al estar incluidos en una política de prescripción universal, habrían recibido profilaxis sin indicación clínica demostrable.
+
+La proporción de cumplimiento formal se calculó como el cociente entre pacientes con criterios de riesgo que recibieron profilaxis y el total de pacientes con criterios de riesgo identificados.
+
+$$
+IQ16 = \left( \frac{\text{Nº de enfermos con riesgo de HGI y profilaxis}}{\text{Nº de enfermos con riesgo de HGI}} \right) \times 100
+$$
+
+```{r}
+library(dplyr); library(ggplot2); library(knitr)
+
+# 1. Limpieza y construcción de criterios de riesgo
+enpic <- enpic %>% 
+  mutate(
+    # A. Ausencia de nutrición enteral
+    # Se considera riesgo si no existe inicio registrado de NE o si los días de NE son 0.
+    Sin_NE = is.na(Inicio_NE) | (!is.na(TOTALNE2) & TOTALNE2 == 0),
+    # B. Coagulopatía
+    # INR > 1,5 o plaquetas < 50.000/mm3.
+    # En la base, el umbral se operacionaliza como plaquetas < 50.
+    Tiene_Coagulopatia = 
+      (!is.na(INR1) & INR1 > 1.5) |
+      (!is.na(INR3) & INR3 > 1.5) |
+      (!is.na(PLAQUETAS1) & PLAQUETAS1 < 50) |
+      (!is.na(PLAQUETAS3) & PLAQUETAS3 < 50),
+    # C. Shock
+    # Necesidad de noradrenalina.
+    Tiene_Shock = !is.na(NEC_NA) & NEC_NA == 1,
+    # D. Fracaso renal agudo
+    Tiene_FalloRenal = !is.na(TRR) & TRR == 1 |  (!is.na(HYPER_CREATININA) & HYPER_CREATININA >= 2),
+    # E. Riesgo integrado de hemorragia gastrointestinal
+    Riesgo_HGI = Sin_NE | Tiene_Coagulopatia | Tiene_Shock | Tiene_FalloRenal,
+    # La ausencia de registro se interpreta como ausencia de criterio documentado.
+    Riesgo_HGI = ifelse(is.na(Riesgo_HGI), FALSE, Riesgo_HGI))
+
+# 2. Cálculo del indicador oficial
+Denominador_IQ16 <- sum(enpic$Riesgo_HGI == TRUE, na.rm = TRUE)
+
+# Numerador asumido por protocolo:
+# La unidad declara prescripción universal de profilaxis gástrica.
+Numerador_IQ16 <- Denominador_IQ16
+
+IQ16 <- round((Numerador_IQ16 / Denominador_IQ16) * 100, 2)
+IC95_IQ16 <- prop.test(Numerador_IQ16, Denominador_IQ16)$conf.int * 100
+
+# 3. Auditoría complementaria: sobremedicación potencial
+Total_Sobremedicados <- sum(enpic$Riesgo_HGI == FALSE, na.rm = TRUE)
+
+# 4. Imprimir resultados
+print(paste("Número de pacientes de riesgo que recibieron el protector:", Numerador_IQ16))
+print(paste("Número de pacientes con riesgo demostrable de sangrado:", Denominador_IQ16))
+print(paste("El", round(IQ16, 2), "% de los pacientes con riesgo demostrable de sangrado recibieron el protector."))
+print(paste("Pacientes SIN riesgo a los que se les administró profilaxis innecesaria:", Total_Sobremedicados))
+print(paste("Porcentaje de la UCI sobremedicada:", round((Total_Sobremedicados / nrow(enpic)) * 100, 2), "%"))
+```
+
+El análisis del IQ16 mostró un **cumplimiento formal del `r IQ16`%**. En la cohorte evaluada, **`r Denominador_IQ16` pacientes** presentaban al menos un criterio objetivo de riesgo de hemorragia gastrointestinal por estrés y, bajo la política declarada de prescripción universal, todos ellos se consideraron correctamente cubiertos por profilaxis farmacológica.
+
+No obstante, la auditoría de adecuación clínica identificó **`r Total_Sobremedicados` pacientes sin criterios de riesgo objetivables**, lo que representa el **`r round((Total_Sobremedicados/nrow(enpic))*100, 2)`%** del total de la cohorte. Este subgrupo constituye una situación de **sobremedicación potencial**, al recibir supresión ácida sin indicación clínica demostrable según los criterios definidos.
+
+El IQ16 presenta un **cumplimiento formal óptimo**, pero condicionado por una estrategia de **prescripción universal**. Por tanto, el resultado del indicador debe interpretarse con cautela: el 100% no refleja necesariamente una individualización adecuada de la profilaxis, sino una cobertura farmacológica sistemática de toda la cohorte.
+
+Desde una perspectiva de calidad asistencial, el hallazgo más relevante no es el cumplimiento del numerador, sino la identificación de un margen de mejora en la **desprescripción selectiva**. La presencia de **`r Total_Sobremedicados` pacientes potencialmente sobremedicados** sugiere una posible inercia terapéutica y una oportunidad para revisar la indicación diaria de protectores gástricos en pacientes sin factores de riesgo persistentes.
+
+El numerador del IQ16 se ha asumido como completo por protocolo, pero no ha sido verificado mediante una variable individual de administración farmacológica. Además, la ausencia de registro de un factor de riesgo se ha interpretado como ausencia de dicho criterio, lo que podría **infraestimar el riesgo real** y, por tanto, **sobrestimar la sobremedicación potencial**.
+
+```{r}
+datos_grafico_iq16 <- data.frame(Categoria = c("Con criterios de riesgo\n(profilaxis indicada)", "Sin criterios de riesgo\n(sobremedicación potencial)"), Pacientes = c(Denominador_IQ16, Total_Sobremedicados)) %>% mutate(Porcentaje = round((Pacientes / sum(Pacientes)) * 100, 2), Etiqueta = paste0(Pacientes, " pac.\n(", Porcentaje, "%)"))
+
+grafico_iq16 <- ggplot(datos_grafico_iq16, aes(x = 2, y = Pacientes, fill = Categoria)) + geom_col(color = "white", linewidth = 2, width = 1) + coord_polar(theta = "y", start = 0) + xlim(0.5, 2.5) + geom_text(aes(label = Etiqueta), position = position_stack(vjust = 0.5), color = "white", fontface = "bold", size = 4) + annotate("text", x = 0.5, y = 0, label = paste0("Total UCI\n", nrow(enpic), " pac."), fontface = "bold", size = 5, color = "#333333") + scale_fill_manual(values = c("Con criterios de riesgo\n(profilaxis indicada)" = "#27AE60", "Sin criterios de riesgo\n(sobremedicación potencial)" = "#E74C3C")) + labs(title = "Profilaxis de la úlcera por estrés: cumplimiento formal y adecuación clínica", subtitle = "Prescripción universal de protectores gástricos en la cohorte UCI", fill = "Auditoría clínica:") + theme_void(base_size = 14) + theme(plot.title = element_text(face = "bold", size = 13, hjust = 0.5, margin = margin(b = 4)), plot.subtitle = element_text(size = 12, hjust = 0.5, margin = margin(b = 18)), legend.position = "bottom", legend.title = element_text(face = "bold", size = 11), legend.text = element_text(size = 10), plot.margin = margin(20, 20, 20, 20))
+
+print(grafico_iq16)
+```
+
+### **Conclusiones IQ16**
+
+En conjunto, el análisis del IQ16 evidencia un cumplimiento formal óptimo de la profilaxis farmacológica de la hemorragia gastrointestinal por estrés en los pacientes críticos con criterios objetivos de riesgo.
+
+En la cohorte evaluada, 450 de los 525 pacientes analizados presentaban al menos un criterio clínico objetivable de riesgo de hemorragia gastrointestinal por estrés —ausencia de nutrición enteral, coagulopatía, shock o fracaso renal agudo—. Dado que la unidad aplica una política declarada de prescripción universal de protectores gástricos, todos estos pacientes se consideraron cubiertos por profilaxis farmacológica, lo que supone un cumplimiento formal del 100%.
+
+Este resultado debe interpretarse, sin embargo, con cautela. El cumplimiento del 100% no refleja necesariamente una indicación individualizada de la profilaxis, sino una estrategia asistencial de cobertura sistemática de toda la cohorte. Por tanto, el IQ16 no identifica un problema de infraprescripción en los pacientes con riesgo, sino que desplaza el foco de la auditoría hacia la posible sobreutilización en pacientes sin criterios de riesgo objetivables.
+
+La auditoría complementaria identificó 75 pacientes sin criterios objetivos de riesgo documentados, lo que representa el 14,29% del total de la cohorte. Este subgrupo constituye una situación de sobremedicación potencial, al haber recibido profilaxis antiulcerosa bajo una política universal pese a no presentar indicación clínica demostrable según los criterios operativizados.
+
+Desde el punto de vista de calidad asistencial, el hallazgo principal del IQ16 no es el cumplimiento formal del indicador, sino la existencia de un margen de mejora en la adecuación clínica y en la desprescripción selectiva. La profilaxis farmacológica de la úlcera por estrés puede estar justificada en pacientes críticos con riesgo elevado, pero su mantenimiento sistemático en pacientes sin factores de riesgo persistentes puede representar una inercia terapéutica evitable.
+
+No obstante, el resultado debe interpretarse con prudencia metodológica. En primer lugar, el numerador se ha asumido como completo por protocolo, pero no se ha verificado mediante una variable individual de administración farmacológica. En segundo lugar, la ausencia de registro de un factor de riesgo se ha interpretado como ausencia de dicho criterio, lo que podría infraestimar el riesgo real y, por tanto, sobrestimar la sobremedicación potencial. En tercer lugar, algunos factores de riesgo contemplados por el indicador original no pudieron ser plenamente operacionalizados con las variables disponibles en la base de datos.
+
+**Por qué no se realiza análisis univariante ni multivariante**
+
+No se considera adecuado realizar análisis univariante ni multivariante a partir del IQ16 en su formulación actual. El motivo principal es que el desenlace del indicador —recibir profilaxis farmacológica entre los pacientes con riesgo— no presenta variabilidad, ya que todos los pacientes con criterios de riesgo se consideran cubiertos por la política universal de la unidad.
+
+En estas condiciones, no es posible construir comparaciones estadísticas útiles entre cumplidores e incumplidores, ni modelos ajustados destinados a identificar factores asociados al cumplimiento del indicador. El resultado del IQ16 funciona, por tanto, como una auditoría descriptiva de cobertura y adecuación clínica, no como un análisis etiológico o predictivo.
+
+Tampoco sería metodológicamente sólido modelizar la sobremedicación potencial como desenlace principal, ya que esta categoría depende de la ausencia de criterios documentados en la base de datos y no de una verificación clínica individualizada de la indicación real. Además, al no disponer de una variable específica de administración de protector gástrico, la exposición farmacológica se infiere a partir de la política asistencial declarada.
+
+Por tanto, el análisis más adecuado es el cálculo descriptivo del cumplimiento formal, la cuantificación de pacientes con y sin criterios de riesgo objetivables, y la interpretación clínica del posible margen de desprescripción.
+
+**Auditoría clínica y oportunidades de mejora**
+
+Desde la perspectiva de calidad asistencial, el IQ16 debe entenderse como un indicador de seguridad y adecuación de la profilaxis farmacológica de la úlcera por estrés. Su resultado muestra una cobertura completa de los pacientes con riesgo, pero también sugiere la necesidad de reforzar varios puntos críticos:
+
+1. **Revisión diaria de la indicación de profilaxis antiulcerosa**, especialmente en pacientes que ya no presentan shock, coagulopatía, fracaso renal, ausencia de nutrición enteral u otros factores de riesgo persistentes.
+
+2. **Evitar la prescripción universal no individualizada**, sustituyéndola progresivamente por una estrategia basada en riesgo clínico documentado.
+
+3. **Mejorar la trazabilidad de la administración farmacológica**, incorporando una variable específica que permita confirmar si cada paciente recibió realmente inhibidores de la bomba de protones, anti-H2 u otro tipo de profilaxis.
+
+4. **Documentar de forma explícita los factores de riesgo de hemorragia gastrointestinal**, incluyendo aquellos no completamente recogidos en la base actual, como antecedentes de enfermedad ulcerosa, hemorragia digestiva previa, tratamiento anticoagulante o antiagregante, corticoides a dosis altas, hepatopatía, quemaduras extensas o traumatismo craneoencefálico grave.
+
+5. **Integrar el IQ16 en una estrategia de desprescripción segura**, de forma que la profilaxis se mantenga mientras exista riesgo y se suspenda cuando desaparezca la indicación clínica.
+
+En síntesis, el IQ16 muestra una cobertura formal excelente de la profilaxis de la úlcera por estrés en pacientes críticos con criterios de riesgo. Sin embargo, el análisis revela que el cumplimiento del 100% está condicionado por una política de prescripción universal y no necesariamente por una adecuación individualizada. La señal principal de calidad no es la falta de profilaxis en pacientes de riesgo, sino la existencia de un 14,29% de pacientes sin criterios objetivables que podrían haber recibido supresión ácida innecesaria. Este hallazgo no demuestra sobremedicación inapropiada de forma definitiva, pero sí justifica revisar la indicación diaria, mejorar la trazabilidad y avanzar hacia una profilaxis más selectiva e individualizada.
+
