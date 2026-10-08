@@ -1,0 +1,442 @@
+---
+title: "Indicador 11: Incidencia de Nutritrauma en Pacientes con TMN"
+author: "Carmen Macías Portillo"
+date: "`r Sys.Date()`"
+output: 
+  prettydoc::html_pretty:
+    theme: tactile
+    toc: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+```{r}
+# Cargamos la librería 'haven', necesaria para cargar archivos .sav (SPSS)
+library(haven)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+# Cargamos el archivo .sav
+enpic <- read_sav("ENPIC_BMI_525.sav")
+```
+
+## **Indicador de Calidad 11** (**IQ11**): Incidencia de nutritrauma en pacientes con tratamiento médico nutricional
+
+El IQ11 evalúa la incidencia de eventos compatibles con nutritrauma en pacientes que reciben tratamiento médico nutricional (TMN). Se trata de un indicador de resultado y seguridad, orientado a cuantificar la aparición de complicaciones metabólicas y orgánicas potencialmente relacionadas con el soporte nutricional.
+
+En la base ENPIC, el indicador se ha operativizado mediante la identificación de alteraciones bioquímicas o diagnósticas disponibles en el registro. Por tanto, el resultado debe interpretarse como una estimación de incidencia de eventos compatibles con nutritrauma en la base de datos, no como una atribución causal directa del evento al TMN.
+
+Para evaluar la incidencia de nutritrauma, el indicador se ha operativizado bajo los siguientes criterios técnicos:
+
+- **Población diana** ($N$): Pacientes con tratamiento médico nutricional documentado (`TOTAL_DIAS_SN > 0`).
+
+- **Casos con evento** ($n$): Pacientes con al menos un evento compatible con nutritrauma según las variables disponibles en ENPIC. Se consideraron eventos principales: hipertrigliceridemia relevante (HYPER_TRIGLI > 400), hiperuremia relevante (`HYPER_UREA > 100`), disfunción hepática (`LIVER_DYSFUNCTION > 2`), colestasis (`CHOLESTASIS > 2`) o patrón hepático mixto (`MIXED_PATTERN > 2`).
+
+La variable `ANY_COMPLICATION` no se incluyó en la definición principal del indicador, al tratarse de un marcador global inespecífico de complicación.
+
+Dado que ENPIC no permite confirmar de forma automatizada la atribución etiológica de cada alteración al TMN, el IQ11 debe interpretarse como una estimación pragmática de eventos compatibles con nutritrauma, condicionada por la gravedad basal, la disfunción orgánica previa, la sepsis, el shock, la insuficiencia renal, la hepatopatía previa y la duración del soporte nutricional.
+
+La proporción de incidencia se calculó como el cociente entre pacientes con al menos un evento compatible con nutritrauma y pacientes con TMN documentado.
+
+$$IQ11 = \left( \frac{\text{Nº de pacientes con evento compatible con nutritrauma}}{\text{Nº de pacientes con TMN}} \right) \times 100$$
+
+Para cuantificar la precisión de la estimación se calculó el intervalo de confianza binomial al 95%.
+
+```{r}
+library(dplyr); library(ggplot2); library(scales); library(knitr)
+
+# 1. Denominador principal: Pacientes con TMN documentado
+pacientes_TMN_iq11 <- enpic %>% filter(!is.na(TOTAL_DIAS_SN), TOTAL_DIAS_SN > 0)
+Denominador_IQ11 <- nrow(pacientes_TMN_iq11)
+
+# 2. Numerador: Eventos compatibles con nutritrauma
+pacientes_TMN_iq11 <- pacientes_TMN_iq11 %>% mutate(
+  Evento_HiperTG = !is.na(HYPER_TRIGLI) & HYPER_TRIGLI > 400,
+  Evento_HiperUrea = !is.na(HYPER_UREA) & HYPER_UREA > 100,
+  Evento_DisfuncionHepatica = !is.na(LIVER_DYSFUNCTION) & LIVER_DYSFUNCTION > 2.0,
+  Evento_Colestasis = !is.na(CHOLESTASIS) & CHOLESTASIS > 2.0,
+  Evento_PatronMixto = !is.na(MIXED_PATTERN) & MIXED_PATTERN > 2.0,
+  Tiene_Nutritrauma_IQ11 = Evento_HiperTG | Evento_HiperUrea | Evento_DisfuncionHepatica | Evento_Colestasis | Evento_PatronMixto)
+
+Numerador_IQ11 <- sum(pacientes_TMN_iq11$Tiene_Nutritrauma_IQ11, na.rm = TRUE)
+
+# 3. Estimación puntual e intervalo de confianza
+IQ11 <- (Numerador_IQ11 / Denominador_IQ11) * 100
+
+test_iq11 <- prop.test(Numerador_IQ11, Denominador_IQ11, conf.level = 0.95)
+IC_Inf_IQ11 <- round(test_iq11$conf.int[1] * 100, 2)
+IC_Sup_IQ11 <- round(test_iq11$conf.int[2] * 100, 2)
+
+# 4. Evaluación frente al estándar
+Estandar_IQ11 <- 15
+Cumple_Estandar_IQ11 <- IQ11 <= Estandar_IQ11
+
+# 5. Imprimir los resultados
+print(paste("Número de pacientes con uno o más eventos de nutritrauma:", Numerador_IQ11)); print(paste("Número de pacientes con TMN:", Denominador_IQ11)); print(paste("El", round(IQ11, 2), "% de pacientes con TMN presentaron uno o más eventos de nutritrauma, con un intervalo de confianza al 95% de [", IC_Inf_IQ11, "% -", IC_Sup_IQ11, "%]"))
+```
+
+En el análisis, **`r Numerador_IQ11`** de **`r Denominador_IQ11` pacientes** con TMN presentaron al menos un evento compatible con nutritrauma. La incidencia estimada fue del **`r round(IQ11, 2)`%**, con un IC95% de `r round(IC_Inf_IQ11, 2)`-`r round(IC_Sup_IQ11, 2)`%.
+
+El resultado se sitúa por encima del estándar máximo aceptable del `r Estandar_IQ11`%. Además, el límite inferior del IC95% permanece por encima de dicho umbral, por lo que el indicador se clasifica como no cumplido.
+
+```{r}
+# 6. Gráfico
+df_grafico_iq11 <- tibble(Indicador = "IQ11", Incidencia = IQ11, IC_inf = IC_Inf_IQ11, IC_sup = IC_Sup_IQ11, Numerador = Numerador_IQ11, Denominador = Denominador_IQ11, Etiqueta = paste0(Numerador_IQ11, "/", Denominador_IQ11, "\n", round(IQ11, 2), "%", "\nIC95%: ", round(IC_Inf_IQ11, 2), "-", round(IC_Sup_IQ11, 2), "%"))
+
+grafico_iq11 <- ggplot(df_grafico_iq11, aes(x = Indicador, y = Incidencia)) + geom_col(width = 0.3) + geom_errorbar(aes(ymin = IC_inf, ymax = IC_sup), width = 0.12, linewidth = 0.7) + geom_hline(yintercept = Estandar_IQ11, linetype = "dashed", linewidth = 0.8) + annotate("text", x = 1.45, y = Estandar_IQ11 + 1.5, label = paste0("Estándar máximo: ≤", Estandar_IQ11, "%"), hjust = 1, size = 3.5) + geom_text(aes(y = IC_sup, label = Etiqueta), vjust = -0.3, size = 3.8, lineheight = 0.9) + scale_y_continuous(limits = c(0, max(df_grafico_iq11$IC_sup, Estandar_IQ11) + 12), breaks = seq(0, 100, by = 10), labels = function(x) paste0(x, "%")) + labs(title = "IQ11: Incidencia de nutritrauma en pacientes con TMN", subtitle = "Incidencia observada frente al estándar máximo aceptable", x = NULL, y = "Incidencia de eventos compatibles con nutritrauma") + theme_minimal(base_size = 12) + theme(panel.grid.major.x = element_blank(), axis.text.x = element_text(face = "bold"), plot.title = element_text(face = "bold"))
+
+grafico_iq11
+```
+
+El IQ11 evidencia una incidencia elevada de eventos compatibles con nutritrauma en la cohorte con TMN. Este resultado no permite atribuir causalidad directa del evento al soporte nutricional en todos los casos, dado el perfil clínico del paciente crítico y la posible concurrencia de disfunción orgánica previa, sepsis, shock, insuficiencia renal, hepatopatía, inflamación sistémica o exposición farmacológica.
+
+No obstante, el indicador identifica una carga relevante de alteraciones metabólicas u orgánicas potencialmente relacionadas con la seguridad del TMN. Su incumplimiento sugiere la necesidad de integrar estos hallazgos con los indicadores de monitorización, adecuación de aportes y ajuste terapéutico.
+
+### **Desglose de eventos compatibles con nutritrauma**
+
+Una vez estimada la incidencia global del IQ11, se realizó un análisis descriptivo de los componentes que contribuyeron al evento. El objetivo fue identificar qué dominios metabólico-orgánicos concentraron la mayor carga de alteraciones compatibles con nutritrauma en la cohorte con TMN.
+
+Este análisis no debe interpretarse como una clasificación etiológica causal, sino como un desglose fenotípico de los eventos incluidos en la definición operacional del indicador. Dado que un mismo paciente puede presentar más de una alteración, las categorías no son mutuamente excluyentes y, por tanto, la suma de eventos por dominio puede ser superior al numerador global del IQ11.
+
+```{r}
+library(dplyr); library(tidyr); library(ggplot2); library(scales); library(knitr)
+
+# 1. Desglose por dominio de toxicidad metabólico-orgánica
+desglose_iq11_principal <- pacientes_TMN_iq11 %>% summarise(Hiperuremia = sum(Evento_HiperUrea, na.rm = TRUE), Disfuncion_Hepatica_Global = sum(Evento_DisfuncionHepatica | Evento_Colestasis | Evento_PatronMixto, na.rm = TRUE), Hipertrigliceridemia = sum(Evento_HiperTG, na.rm = TRUE)) %>% pivot_longer(cols = everything(), names_to = "Dominio", values_to = "N_pacientes") %>% mutate(Porcentaje_Cohorte = (N_pacientes / Denominador_IQ11) * 100, Porcentaje_Eventos_IQ11 = (N_pacientes / Numerador_IQ11) * 100, Dominio = case_when(Dominio == "Hiperuremia" ~ "Hiperuremia relevante\n(Urea > 100)", Dominio == "Disfuncion_Hepatica_Global" ~ "Disfunción hepática global\n(cualquier patrón hepático)", Dominio == "Hipertrigliceridemia" ~ "Hipertrigliceridemia relevante\n(TG > 400)"), Etiqueta = paste0(N_pacientes, " pac. (", round(Porcentaje_Cohorte, 2), "%)")) %>% filter(N_pacientes > 0) %>% arrange(desc(N_pacientes))
+
+# 2. Tabla descriptiva
+tabla_desglose_iq11_principal <- desglose_iq11_principal %>% transmute(Dominio, `n` = N_pacientes, `% sobre cohorte TMN` = round(Porcentaje_Cohorte, 2), `% sobre pacientes del IQ11` = round(Porcentaje_Eventos_IQ11, 2))
+kable(tabla_desglose_iq11_principal)
+
+# 3. Gráfico de desglose
+grafico_desglose_iq11_principal <- ggplot(desglose_iq11_principal, aes(x = reorder(Dominio, N_pacientes), y = Porcentaje_Cohorte)) + geom_col(width = 0.65) + coord_flip(clip = "off") + geom_text(aes(label = Etiqueta), hjust = -0.08, size = 3.8) + scale_y_continuous(limits = c(0, max(desglose_iq11_principal$Porcentaje_Cohorte) + 6), breaks = seq(0, 100, by = 5), labels = function(x) paste0(x, "%")) + labs(title = "IQ11: Desglose principal de eventos compatibles con nutritrauma", subtitle = paste0("Eventos no excluyentes sobre la cohorte con TMN (n = ", Denominador_IQ11, ")"), x = NULL, y = "Incidencia sobre el total de pacientes con TMN") + theme_minimal(base_size = 12) + theme(panel.grid.major.y = element_blank(), axis.text.y = element_text(face = "bold"), plot.title = element_text(face = "bold"), plot.margin = margin(10, 35, 10, 10))
+
+grafico_desglose_iq11_principal
+```
+
+El análisis del IQ11 evidencia que las alteraciones metabólico-orgánicas en pacientes con Terapia Médica Nutricional (TMN) no son mutuamente excluyentes (un mismo paciente puede presentar más de una alteración) y se distribuyen en tres niveles de impacto:
+
+1. **Hiperuremia relevante (Urea > 100)** - *Principal contribuyente*. Observada en `r desglose_iq11_principal$N_pacientes[desglose_iq11_principal$Dominio == "Hiperuremia relevante\n(Urea > 100)"]` pacientes, equivalente al `r round(desglose_iq11_principal$Porcentaje_Cohorte[desglose_iq11_principal$Dominio == "Hiperuremia relevante\n(Urea > 100)"], 2)`% de la cohorte con TMN. Define el perfil del indicador como eminentemente renal-metabólico. Su origen es multifactorial: más allá de una posible sobrealimentación proteica, suele estar condicionada por catabolismo, sepsis, shock o insuficiencia renal.
+
+2. **Disfunción hepática global** — *Impacto intermedio*. Registrada en `r desglose_iq11_principal$N_pacientes[desglose_iq11_principal$Dominio == "Disfunción hepática global\n(cualquier patrón hepático)"]` pacientes, equivalente al `r round(desglose_iq11_principal$Porcentaje_Cohorte[desglose_iq11_principal$Dominio == "Disfunción hepática global\n(cualquier patrón hepático)"], 2)`% de la cohorte. Agrupa alteraciones hepatobiliares que pueden vincularse al TMN, pero que también responden al contexto crítico (inflamación sistémica, fármacos, hepatopatías previas).
+
+3. **Hipertrigliceridemia relevante** (**TG > 400**) - *Menor impacto*. Observada en `r desglose_iq11_principal$N_pacientes[desglose_iq11_principal$Dominio == "Hipertrigliceridemia relevante\n(TG > 400)"]` pacientes, equivalente al `r round(desglose_iq11_principal$Porcentaje_Cohorte[desglose_iq11_principal$Dominio == "Hipertrigliceridemia relevante\n(TG > 400)"], 2)`% de la cohorte. Indica que la sobrecarga lipídica tiene un peso cuantitativo marginal dentro de la definición operacional aplicada.
+
+El incumplimiento del IQ11 responde primordialmente a un patrón renal-metabólico, seguido del hepático y, en menor medida, la hipertrigliceridemia.
+
+### **Análisis univariante según presencia de eventos compatibles con nutritrauma**
+
+Se realizó un análisis univariante comparativo entre pacientes con y sin eventos compatibles con nutritrauma según la definición operacional del IQ11. El objetivo fue caracterizar el perfil clínico, nutricional y evolutivo de los pacientes que presentaron al menos una alteración metabólico-orgánica incluida en el indicador.
+
+La variable dependiente del análisis fue `Tiene_Nutritrauma_IQ11`, clasificada en dos grupos:
+
+- **Sin nutritrauma**: pacientes sin eventos compatibles con nutritrauma.
+- **Nutritrauma**: pacientes con al menos un evento compatible con nutritrauma.
+
+Para evitar circularidad metodológica, no se incluyeron como variables comparativas los componentes utilizados para construir el desenlace principal del IQ11: `HYPER_UREA`, `HYPER_TRIGLI`, `LIVER_DYSFUNCTION`, `CHOLESTASIS` y `MIXED_PATTERN`.
+
+Para las variables continuas se aplicaron pruebas bivariantes según su distribución:
+
+- **Mann-Whitney** para variables asimétricas, expresadas como mediana y rango intercuartílico.
+- **T-test** para variables con distribución aproximadamente normal, expresadas como media y desviación estándar.
+
+Las variables categóricas se resumieron mediante frecuencias absolutas y porcentajes, y se compararon mediante **chi-cuadrado** o test exacto de Fisher cuando fue necesario.
+
+Los valores de *$p≤0,05$* se resaltaron en negrita y subrayado. Los valores de *$p>0,05$* y *$≤0,10$* se resaltaron en negrita como tendencia estadística.
+
+```{r}
+library(dplyr); library(tidyr); library(knitr)
+
+# 0. Crear variable de grupo para el análisis univariante IQ11
+pacientes_TMN_iq11 <- pacientes_TMN_iq11 %>% mutate(Grupo_Nutritrauma_IQ11 = factor(case_when(Tiene_Nutritrauma_IQ11 == FALSE ~ "Sin nutritrauma", Tiene_Nutritrauma_IQ11 == TRUE ~ "Nutritrauma", TRUE ~ NA_character_), levels = c("Sin nutritrauma", "Nutritrauma")))
+
+# Añadir n y % de cada grupo al encabezado de la tabla
+n_grupos_iq11 <- pacientes_TMN_iq11 %>% filter(!is.na(Grupo_Nutritrauma_IQ11)) %>% count(Grupo_Nutritrauma_IQ11) %>% mutate(pct = n / sum(n) * 100, encabezado = paste0(as.character(Grupo_Nutritrauma_IQ11), " (n = ", n, "; ", sprintf("%.1f", pct), "%)"))
+col_sin_iq11 <- n_grupos_iq11$encabezado[n_grupos_iq11$Grupo_Nutritrauma_IQ11 == "Sin nutritrauma"]
+col_con_iq11 <- n_grupos_iq11$encabezado[n_grupos_iq11$Grupo_Nutritrauma_IQ11 == "Nutritrauma"]
+
+formatear_p <- function(p) ifelse(is.na(p), "-", ifelse(p < 0.001, "<0.001", as.character(round(p, 3))))
+
+# 1. Función para variables asimétricas: Mediana [Q1-Q3] + Mann-Whitney
+crear_fila_mw_iq11 <- function(data, var, nom) { d <- data %>% filter(!is.na(.data[[var]]), !is.na(Grupo_Nutritrauma_IQ11)); if (n_distinct(d$Grupo_Nutritrauma_IQ11) < 2) return(tibble(Variable = nom, `Sin nutritrauma` = "-", Nutritrauma = "-", p = "-")); t <- d %>% group_by(Grupo_Nutritrauma_IQ11) %>% summarise(v = sprintf("%.1f [%.1f - %.1f]", median(.data[[var]], na.rm = TRUE), quantile(.data[[var]], 0.25, na.rm = TRUE), quantile(.data[[var]], 0.75, na.rm = TRUE)), .groups = "drop") %>% pivot_wider(names_from = Grupo_Nutritrauma_IQ11, values_from = v); p <- tryCatch(wilcox.test(as.formula(paste(var, "~ Grupo_Nutritrauma_IQ11")), data = d)$p.value, error = function(e) NA_real_); t %>% mutate(Variable = nom, p = formatear_p(p)) %>% select(Variable, everything()) }
+
+# 2. Función para variables normales: Media ± DE + T-test
+crear_fila_ttest_iq11 <- function(data, var, nom) { d <- data %>% filter(!is.na(.data[[var]]), !is.na(Grupo_Nutritrauma_IQ11)); if (n_distinct(d$Grupo_Nutritrauma_IQ11) < 2) return(tibble(Variable = nom, `Sin nutritrauma` = "-", Nutritrauma = "-", p = "-")); t <- d %>% group_by(Grupo_Nutritrauma_IQ11) %>% summarise(v = sprintf("%.1f ± %.1f", mean(.data[[var]], na.rm = TRUE), sd(.data[[var]], na.rm = TRUE)), .groups = "drop") %>% pivot_wider(names_from = Grupo_Nutritrauma_IQ11, values_from = v); p <- tryCatch(t.test(as.formula(paste(var, "~ Grupo_Nutritrauma_IQ11")), data = d)$p.value, error = function(e) NA_real_); t %>% mutate(Variable = nom, p = formatear_p(p)) %>% select(Variable, everything()) }
+
+# 3. Función para variables categóricas con varias categorías
+crear_fila_chi_iq11 <- function(data, var, nom, niveles, etiquetas) { d <- data %>% filter(!is.na(.data[[var]]), !is.na(Grupo_Nutritrauma_IQ11)) %>% mutate(vc = factor(.data[[var]], levels = niveles, labels = etiquetas)) %>% filter(!is.na(vc)); if (nrow(d) == 0 || n_distinct(d$Grupo_Nutritrauma_IQ11) < 2 || n_distinct(d$vc) < 2) return(tibble(Variable = paste0(nom, ": sin variabilidad"), `Sin nutritrauma` = "-", Nutritrauma = "-", p = "-")); tabla_test <- table(d$vc, d$Grupo_Nutritrauma_IQ11); p <- tryCatch(if (any(tabla_test < 5)) fisher.test(tabla_test)$p.value else chisq.test(tabla_test)$p.value, error = function(e) NA_real_); t <- d %>% count(Grupo_Nutritrauma_IQ11, vc) %>% group_by(Grupo_Nutritrauma_IQ11) %>% mutate(v = sprintf("%d (%.1f%%)", n, n / sum(n) * 100)) %>% select(-n) %>% pivot_wider(names_from = Grupo_Nutritrauma_IQ11, values_from = v); t %>% mutate(Variable = paste0(nom, ": ", vc), p = ifelse(row_number() == 1, formatear_p(p), "")) %>% select(-vc) %>% select(Variable, everything()) }
+
+# 4. Función para variables categóricas Sí/No mostrando solo la categoría "Sí"
+crear_fila_chi_si_iq11 <- function(data, var, nom, niveles, etiquetas, categoria_mostrar = "Sí") { d <- data %>% filter(!is.na(.data[[var]]), !is.na(Grupo_Nutritrauma_IQ11)) %>% mutate(vc = factor(.data[[var]], levels = niveles, labels = etiquetas)) %>% filter(!is.na(vc)); if (nrow(d) == 0 || n_distinct(d$Grupo_Nutritrauma_IQ11) < 2 || n_distinct(d$vc) < 2) return(tibble(Variable = paste0(nom, ": ", categoria_mostrar), `Sin nutritrauma` = "-", Nutritrauma = "-", p = "-")); tabla_test <- table(d$vc, d$Grupo_Nutritrauma_IQ11); p <- tryCatch(if (any(tabla_test < 5)) fisher.test(tabla_test)$p.value else chisq.test(tabla_test)$p.value, error = function(e) NA_real_); d %>% count(Grupo_Nutritrauma_IQ11, vc) %>% group_by(Grupo_Nutritrauma_IQ11) %>% mutate(v = sprintf("%d (%.1f%%)", n, n / sum(n) * 100)) %>% filter(vc == categoria_mostrar) %>% select(-n, -vc) %>% pivot_wider(names_from = Grupo_Nutritrauma_IQ11, values_from = v) %>% mutate(Variable = paste0(nom, ": ", categoria_mostrar), p = formatear_p(p)) %>% select(Variable, everything()) }
+
+# 5. Variable de tipo de soporte nutricional para IQ11
+pacientes_TMN_iq11 <- pacientes_TMN_iq11 %>% mutate(TIPO_SN_IQ11 = factor(case_when(TIPO_SN_Grupo == 1 ~ "NE exclusiva", TIPO_SN_Grupo == 2 ~ "NPT exclusiva", TIPO_SN_Grupo == 3 ~ "NE + NPT", TIPO_SN_Grupo == 4 ~ "NPT + NE", TRUE ~ NA_character_), levels = c("NE exclusiva", "NPT exclusiva", "NE + NPT", "NPT + NE")))
+
+# 6. Tabla final univariante ensamblada por bloques clínicos
+tabla_univariante_iq11 <- bind_rows(
+  # Características basales y gravedad
+  crear_fila_mw_iq11(pacientes_TMN_iq11, "EDAD", "Edad, años"), crear_fila_mw_iq11(pacientes_TMN_iq11, "BMI", "BMI, kg/m²"), crear_fila_ttest_iq11(pacientes_TMN_iq11, "APACHEII", "APACHE II"), crear_fila_ttest_iq11(pacientes_TMN_iq11, "SAPSII", "SAPS II"), crear_fila_mw_iq11(pacientes_TMN_iq11, "SOFA1", "SOFA admisión"), crear_fila_mw_iq11(pacientes_TMN_iq11, "NUTRIC_Score", "NUTRIC Score"), crear_fila_chi_iq11(pacientes_TMN_iq11, "SEXO", "Sexo", niveles = c(1, 2), etiquetas = c("Hombre", "Mujer")),
+  # Antecedentes
+  crear_fila_chi_si_iq11(pacientes_TMN_iq11, "AHTA", "Antecedentes hipertensión", niveles = c(0, 1), etiquetas = c("No", "Sí")), crear_fila_chi_si_iq11(pacientes_TMN_iq11, "ADBTM", "Antecedentes diabetes mellitus", niveles = c(0, 1), etiquetas = c("No", "Sí")), crear_fila_chi_si_iq11(pacientes_TMN_iq11, "AEPOC", "Antecedentes EPOC", niveles = c(0, 1), etiquetas = c("No", "Sí")), crear_fila_chi_si_iq11(pacientes_TMN_iq11, "ACARDIOP", "Antecedentes cardiopatía", niveles = c(0, 1), etiquetas = c("No", "Sí")), crear_fila_chi_si_iq11(pacientes_TMN_iq11, "ACIRROSIS", "Enfermedad hepática crónica", niveles = c(0, 1), etiquetas = c("No", "Sí")), crear_fila_chi_si_iq11(pacientes_TMN_iq11, "AIRC", "Fallo renal crónico", niveles = c(0, 1), etiquetas = c("No", "Sí")), crear_fila_chi_si_iq11(pacientes_TMN_iq11, "AINMUNO", "Antecedentes inmunosupresión", niveles = c(0, 1), etiquetas = c("No", "Sí")), crear_fila_chi_si_iq11(pacientes_TMN_iq11, "ANEOPLAS", "Antecedentes neoplasia", niveles = c(0, 1), etiquetas = c("No", "Sí")),
+  # Perfil clínico-nutricional
+  crear_fila_chi_iq11(pacientes_TMN_iq11, "STATUS3", "Tipo de paciente", niveles = c(0, 1, 2), etiquetas = c("Quirúrgico", "Médico", "Trauma")), crear_fila_chi_si_iq11(pacientes_TMN_iq11, "VGSING2", "Paciente con desnutrición según VGS", niveles = c(1, 2), etiquetas = c("No", "Sí")), crear_fila_chi_si_iq11(pacientes_TMN_iq11, "NUTRISCOR2", "Paciente con riesgo nutricional según NUTRIC", niveles = c(0, 1), etiquetas = c("No", "Sí")), crear_fila_mw_iq11(pacientes_TMN_iq11, "HORASIN", "Horas hasta inicio del soporte nutricional"), crear_fila_mw_iq11(pacientes_TMN_iq11, "TOTAL_DIAS_SN", "Días en terapia nutricional"), crear_fila_mw_iq11(pacientes_TMN_iq11, "TOTALNE2", "Días de nutrición enteral"), crear_fila_mw_iq11(pacientes_TMN_iq11, "TOTALNPT22", "Días de nutrición parenteral"), crear_fila_ttest_iq11(pacientes_TMN_iq11, "Kcal_14d", "Media kcal/kg/día"), crear_fila_ttest_iq11(pacientes_TMN_iq11, "gPROT_14d", "Media g proteína/kg/día"), crear_fila_chi_iq11(pacientes_TMN_iq11, "TIPO_SN_IQ11", "Tipo de soporte nutricional", niveles = c("NE exclusiva", "NPT exclusiva", "NE + NPT", "NPT + NE"), etiquetas = c("NE exclusiva", "NPT exclusiva", "NE + NPT", "NPT + NE")),
+  # Complicaciones digestivas y clínicas
+  crear_fila_chi_si_iq11(pacientes_TMN_iq11, "ANY_COMPLICATION", "Cualquier complicación registrada", niveles = c(0, 1), etiquetas = c("No", "Sí")), crear_fila_chi_si_iq11(pacientes_TMN_iq11, "PVRGM100", "Volumen de residuo gástrico alto (>500 mL)", niveles = c(0, 1), etiquetas = c("No", "Sí")), crear_fila_chi_si_iq11(pacientes_TMN_iq11, "PDANE", "Diarrea", niveles = c(0, 1), etiquetas = c("No", "Sí")), crear_fila_chi_si_iq11(pacientes_TMN_iq11, "PVOMITO", "Vómitos", niveles = c(0, 1), etiquetas = c("No", "Sí")), crear_fila_chi_si_iq11(pacientes_TMN_iq11, "PBRONCOAS", "Broncoaspiración", niveles = c(0, 1), etiquetas = c("No", "Sí")), crear_fila_chi_si_iq11(pacientes_TMN_iq11, "PISQUINT", "Isquemia mesentérica", niveles = c(0, 1), etiquetas = c("No", "Sí")),
+  # Soporte orgánico y complicaciones infecciosas
+  crear_fila_chi_si_iq11(pacientes_TMN_iq11, "VM", "Pacientes con ventilación mecánica", niveles = c(0, 1), etiquetas = c("No", "Sí")), crear_fila_mw_iq11(pacientes_TMN_iq11, "DIASVM", "Días de ventilación mecánica"), crear_fila_chi_si_iq11(pacientes_TMN_iq11, "NEC_NA", "Necesidad de noradrenalina", niveles = c(0, 1), etiquetas = c("No", "Sí")), crear_fila_chi_si_iq11(pacientes_TMN_iq11, "TRR", "Necesidad de TRR", niveles = c(0, 1), etiquetas = c("No", "Sí")), crear_fila_chi_si_iq11(pacientes_TMN_iq11, "INFRESP", "Infección del tracto respiratorio", niveles = c(0, 1), etiquetas = c("No", "Sí")), crear_fila_chi_si_iq11(pacientes_TMN_iq11, "INFVIA", "Infección relacionada con el catéter", niveles = c(0, 1), etiquetas = c("No", "Sí")),
+  # Estancia y desenlaces
+  crear_fila_mw_iq11(pacientes_TMN_iq11, "DIAS_UCI", "Días en UCI"), crear_fila_mw_iq11(pacientes_TMN_iq11, "DIAS_HOSP", "Días de hospitalización"), crear_fila_chi_si_iq11(pacientes_TMN_iq11, "MUERTO28", "Mortalidad a 28 días", niveles = c(0, 1), etiquetas = c("No", "Sí"))
+)
+
+# 7. Limpieza, formato de p-valores y renderizado de la tabla
+tabla_univariante_iq11[is.na(tabla_univariante_iq11)] <- "-"
+tabla_univariante_iq11 %>% mutate(p_num = suppressWarnings(as.numeric(ifelse(p == "<0.001", "0.0009", p))), p = case_when(!is.na(p_num) & p_num <= 0.05 ~ paste0("<b><u>", p, "</u></b>"), !is.na(p_num) & p_num <= 0.10 ~ paste0("<b>", p, "</b>"), TRUE ~ p)) %>% select(-p_num) %>% rename(!!col_sin_iq11 := `Sin nutritrauma`, !!col_con_iq11 := Nutritrauma) %>% knitr::kable(escape = FALSE, caption = "Características clínicas, nutricionales y outcomes según presencia de eventos compatibles con nutritrauma")
+```
+
+Desde el punto de vista estadístico, el grupo con eventos compatibles con nutritrauma muestra un perfil claramente diferenciado y de **mayor complejidad clínica** respecto al grupo sin evento. Las diferencias más consistentes se concentran en los marcadores de **gravedad basal** —APACHE II, SAPS II, SOFA y NUTRIC, todos con *p < 0,001*—, lo que indica que el nutritrauma se agrupa preferentemente en pacientes más graves y con mayor riesgo nutricional. También se observa una mayor carga de **comorbilidad cardiometabólica y orgánica**: hipertensión, diabetes, cardiopatía, hepatopatía crónica y fallo renal crónico presentan diferencias estadísticamente significativas.
+
+En el plano nutricional, el grupo con nutritrauma presenta un inicio más tardío del soporte nutricional, mayor proporción de NE exclusiva y NE + NPT, menor aporte calórico medio y menor aporte proteico medio, lo que sugiere un patrón de pacientes **más difíciles de nutrir**, no necesariamente sobrealimentados de forma global. Destaca además la asociación con **ventilación mecánica**, **isquemia mesentérica** y, especialmente, con **mortalidad a 28 días**, que prácticamente se duplica en el grupo con nutritrauma —46,5% frente a 21,9%; *p < 0,001*—. En conjunto, el análisis univariante no permite inferir causalidad, pero identifica el IQ11 como un marcador de **vulnerabilidad clínica**, **disfunción orgánica y peor evolución pronóstica**.
+
+### **Análisis multivariable**
+#### **Regresión logística binaria**
+
+Se construyó un modelo de regresión logística binaria multivariable para identificar variables asociadas de forma independiente a la presencia de eventos compatibles con nutritrauma. La variable dependiente fue `Tiene_Nutritrauma_IQ11`, codificada como ausencia o presencia de evento.
+
+Se seleccionaron como variables candidatas aquellas con significación estadística en el análisis univariante (*p* < 0,05), restringiendo la selección a variables clínicamente interpretables y evitando redundancia excesiva entre escalas de gravedad. No se incluyeron los componentes utilizados para construir el desenlace del IQ11 (`HYPER_UREA`, `HYPER_TRIGLI`, `LIVER_DYSFUNCTION`, `CHOLESTASIS`, `MIXED_PATTERN`), para evitar circularidad metodológica.
+
+La mortalidad a 28 días (`MUERTO28`) tampoco se incluyó como variable independiente, pese a su asociación univariante, al tratarse de un desenlace clínico posterior y no de una variable basal o terapéutica explicativa. Su inclusión podría introducir sobreajuste, inversión temporal o sesgo por desenlace intermedio. Por tanto, se reservó para la interpretación pronóstica del IQ11, no para el modelo explicativo de factores asociados.
+
+Dado que la variable original de tipo de soporte nutricional presentaba categorías con frecuencias nulas en el grupo con nutritrauma, se generó una variable binaria simplificada: **NE exclusiva** frente a **cualquier modalidad con NPT**.
+
+```{r}
+library(dplyr); library(tidyr); library(broom); library(pROC); library(purrr); library(knitr)
+
+# 1. Preparación de datos
+# Variable dependiente: 0 = Sin nutritrauma / 1 = Nutritrauma
+datos_modelos_iq11 <- pacientes_TMN_iq11 %>% mutate(Nutritrauma_IQ11 = factor(case_when(Tiene_Nutritrauma_IQ11 == FALSE ~ 0, Tiene_Nutritrauma_IQ11 == TRUE ~ 1, TRUE ~ NA_real_), levels = c(0, 1), labels = c("Sin_nutritrauma", "Nutritrauma")), STATUS3 = factor(STATUS3, levels = c(0, 1, 2), labels = c("Quirúrgico", "Médico", "Trauma")), Soporte_NPT_IQ11 = factor(case_when(TIPO_SN_Grupo == 1 ~ "NE exclusiva", TIPO_SN_Grupo %in% c(2, 3, 4) ~ "Con NPT", TRUE ~ NA_character_), levels = c("NE exclusiva", "Con NPT")), VM = factor(VM, levels = c(0, 1), labels = c("No", "Sí")), AHTA = factor(AHTA, levels = c(0, 1), labels = c("No", "Sí")), ADBTM = factor(ADBTM, levels = c(0, 1), labels = c("No", "Sí")), ACARDIOP = factor(ACARDIOP, levels = c(0, 1), labels = c("No", "Sí")), ACIRROSIS = factor(ACIRROSIS, levels = c(0, 1), labels = c("No", "Sí")), AIRC = factor(AIRC, levels = c(0, 1), labels = c("No", "Sí")), PISQUINT = factor(PISQUINT, levels = c(0, 1), labels = c("No", "Sí"))) %>% drop_na(Nutritrauma_IQ11)
+
+# 2. Variables candidatas: significativas en el univariante, clínicamente interpretables y no circulares
+variables_candidatas_iq11 <- c("SOFA1", "NUTRIC_Score", "AHTA", "ADBTM", "ACARDIOP", "ACIRROSIS", "AIRC", "STATUS3", "HORASIN", "TOTALNE2", "Kcal_14d", "gPROT_14d", "VM", "PISQUINT", "Soporte_NPT_IQ11")
+
+# 3. Función para evaluar modelos logísticos binarios
+evaluar_modelo_iq11 <- function(vars, data) { tryCatch({ d_mod <- data %>% select(all_of(c("Nutritrauma_IQ11", vars))) %>% drop_na(); if (nrow(d_mod) < 80 || length(unique(d_mod$Nutritrauma_IQ11)) < 2) return(NULL); mod <- glm(as.formula(paste("Nutritrauma_IQ11 ~", paste(vars, collapse = " + "))), data = d_mod, family = binomial); p_vals <- tidy(mod) %>% filter(term != "(Intercept)"); roc_obj <- roc(response = d_mod$Nutritrauma_IQ11, predictor = predict(mod, type = "response"), levels = c("Sin_nutritrauma", "Nutritrauma"), direction = "<", quiet = TRUE); data.frame(Variables = paste(vars, collapse = " + "), Num_variables = length(vars), N_modelo = nrow(d_mod), AIC = AIC(mod), AUC = as.numeric(auc(roc_obj)), N_significativas = sum(p_vals$p.value <= 0.05, na.rm = TRUE), N_tendencia = sum(p_vals$p.value <= 0.10, na.rm = TRUE)) }, error = function(e) NULL) }
+
+# 4. Combinaciones de variables
+# Se exploran modelos de 2 a 5 variables para evitar sobreajuste
+combinaciones_iq11 <- unlist(lapply(2:min(5, length(variables_candidatas_iq11)), function(k) combn(variables_candidatas_iq11, k, simplify = FALSE)), recursive = FALSE)
+
+# 5. Evaluación masiva de modelos
+resultados_modelos_iq11 <- map_dfr(combinaciones_iq11, evaluar_modelo_iq11, data = datos_modelos_iq11)
+
+# 6. Top 15 modelos por menor AIC
+resultados_modelos_iq11 %>% arrange(AIC) %>% slice(1:15) %>% kable(digits = 3, caption = "Top 15 modelos IQ11 por menor AIC")
+
+# 7. Top 15 modelos por mayor AUC
+resultados_modelos_iq11 %>% arrange(desc(AUC)) %>% slice(1:15) %>% kable(digits = 3, caption = "Top 15 modelos IQ11 por mayor AUC")
+
+# 8. Ranking equilibrado: AIC + AUC + parsimonia
+mejores_eq_iq11 <- resultados_modelos_iq11 %>% mutate(rank_comb = rank(AIC) + rank(-AUC) + Num_variables) %>% arrange(rank_comb) %>% slice(1:15)
+kable(mejores_eq_iq11, digits = 3, caption = "Top 15 modelos IQ11: equilibrio AIC, AUC y parsimonia")
+
+# 9. Ajuste del modelo final
+mejor_formula_iq11 <- mejores_eq_iq11$Variables[1]
+datos_modelo_final_iq11 <- datos_modelos_iq11 %>% select(all_of(c("Nutritrauma_IQ11", unlist(strsplit(mejor_formula_iq11, " \\+ "))))) %>% drop_na()
+modelo_final_iq11 <- glm(as.formula(paste("Nutritrauma_IQ11 ~", mejor_formula_iq11)), data = datos_modelo_final_iq11, family = binomial)
+
+# 10. Tabla de resultados del modelo final
+# IC95% tipo Wald para evitar problemas de convergencia con confint perfilado
+tabla_modelo_final_iq11 <- tidy(modelo_final_iq11) %>% filter(term != "(Intercept)") %>% mutate(OR = exp(estimate), IC_inf = exp(estimate - 1.96 * std.error), IC_sup = exp(estimate + 1.96 * std.error), p = ifelse(p.value < 0.001, "<0.001", sprintf("%.3f", p.value)), OR_IC95 = sprintf("%.2f [%.2f - %.2f]", OR, IC_inf, IC_sup), Variable = recode(term, "SOFA1" = "SOFA admisión", "NUTRIC_Score" = "NUTRIC Score", "AHTASí" = "Antecedentes hipertensión", "ADBTMSí" = "Antecedentes diabetes mellitus", "ACARDIOPSí" = "Antecedentes cardiopatía", "ACIRROSISSí" = "Enfermedad hepática crónica", "AIRCSí" = "Fallo renal crónico", "STATUS3Médico" = "Paciente médico vs quirúrgico", "STATUS3Trauma" = "Paciente trauma vs quirúrgico", "HORASIN" = "Horas hasta inicio del soporte nutricional", "TOTALNE2" = "Días de nutrición enteral", "Kcal_14d" = "Media kcal/kg/día", "gPROT_14d" = "Media g proteína/kg/día", "VMSí" = "Ventilación mecánica", "PISQUINTSí" = "Isquemia mesentérica", "Soporte_NPT_IQ11Con NPT" = "Con NPT vs NE exclusiva"), Comparacion = "Nutritrauma vs sin nutritrauma") %>% select(Comparacion, Variable, OR_IC95, p)
+kable(tabla_modelo_final_iq11, caption = "Modelo final de factores asociados a eventos compatibles con nutritrauma")
+
+# 11. Métricas del modelo final
+mejores_eq_iq11 %>% slice(1) %>% select(Variables, Num_variables, N_modelo, AIC, AUC, N_significativas, N_tendencia) %>% kable(digits = 3, caption = "Métricas del modelo final IQ11")
+```
+
+En el análisis multivariable, la presencia de eventos compatibles con nutritrauma se asoció de forma independiente con un perfil de **mayor gravedad basal** y **mayor vulnerabilidad nutricional**. El **SOFA de admisión** —OR 1,18; IC95% 1,09–1,28; *p < 0,001*— y el **NUTRIC Score** —OR 1,23; IC95% 1,07–1,40; *p = 0,003*— mantuvieron asociación significativa, lo que sitúa el IQ11 como un marcador de **disfunción orgánica y riesgo metabólico**. El **paciente médico** presentó mayor probabilidad de evento frente al quirúrgico —OR 3,47; IC95% 1,52–7,94; *p = 0,003*—, mientras que el grupo trauma no mostró asociación independiente. El **retraso en el inicio del soporte nutricional** también se asoció al evento —OR 1,01 por hora; IC95% 1,00–1,02; *p = 0,002*—. La asociación inversa observada para **soporte con NPT** —OR 0,28; IC95% 0,15–0,53; *p < 0,001*— debe interpretarse con cautela, probablemente como efecto de estructura de cohorte/codificación y no como efecto protector causal. En conjunto, el modelo presentó **AUC 0,772**, compatible con capacidad discriminativa **moderada-buena**.
+
+```{r}
+library(dplyr); library(tidyr); library(ggplot2); library(pROC)
+
+# 1. Preparación de los datos
+# Nos quedamos solo con las filas que tienen datos completos para el modelo final
+datos_modelos_iq11 <- pacientes_TMN_iq11 %>% mutate(Nutritrauma_IQ11 = factor(case_when(Tiene_Nutritrauma_IQ11 == FALSE ~ 0, Tiene_Nutritrauma_IQ11 == TRUE ~ 1, TRUE ~ NA_real_), levels = c(0, 1), labels = c("Sin_nutritrauma", "Nutritrauma")), STATUS3_IQ11 = factor(STATUS3, levels = c(0, 1, 2), labels = c("Quirúrgico", "Médico", "Trauma")), Soporte_NPT_IQ11 = factor(case_when(TIPO_SN_Grupo == 1 ~ "NE exclusiva", TIPO_SN_Grupo %in% c(2, 3, 4) ~ "Con NPT", TRUE ~ NA_character_), levels = c("NE exclusiva", "Con NPT"))) %>% drop_na(Nutritrauma_IQ11, SOFA1, NUTRIC_Score, STATUS3_IQ11, HORASIN, Soporte_NPT_IQ11)
+
+# 2. Ajuste del modelo logístico final
+modelo_final_iq11 <- glm(Nutritrauma_IQ11 ~ SOFA1 + NUTRIC_Score + STATUS3_IQ11 + HORASIN + Soporte_NPT_IQ11, data = datos_modelos_iq11, family = binomial)
+
+# 3. Cálculo de las predicciones y creación del objeto ROC
+# Calculamos la probabilidad predicha para cada paciente
+probabilidades_iq11 <- predict(modelo_final_iq11, type = "response")
+
+# Creamos la curva ROC
+roc_iq11 <- roc(response = datos_modelos_iq11$Nutritrauma_IQ11, predictor = probabilidades_iq11, levels = c("Sin_nutritrauma", "Nutritrauma"), direction = "<", quiet = TRUE)
+
+# Extraemos el valor del Área Bajo la Curva (AUC)
+auc_iq11 <- as.numeric(auc(roc_iq11))
+
+# Extraemos las coordenadas de Sensibilidad y Especificidad para ggplot y añadimos la Tasa de Falsos Positivos
+coordenadas_roc_iq11 <- coords(roc_iq11, x = "all", ret = c("specificity", "sensitivity"), transpose = FALSE) %>% as.data.frame() %>% mutate(FPR = 1 - specificity)
+
+# 4. Generación del gráfico ROC con ggplot2
+# Añadimos la línea de referencia, proporciones, límites, títulos y estética limpia
+grafica_roc_iq11 <- ggplot(coordenadas_roc_iq11, aes(x = FPR, y = sensitivity)) + geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "grey60", linewidth = 0.8) + geom_line(color = "#1976D2", linewidth = 1.2) + coord_equal() + scale_x_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.2)) + scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.2)) + labs(title = "Curva ROC: Modelo Predictivo de Nutritrauma (IQ11)", subtitle = paste0("Variables: SOFA, NUTRIC Score, Tipo Paciente, Horas hasta Soporte, Tipo Soporte\nAUC = ", sprintf("%.3f", auc_iq11)), x = "1 - Especificidad (Tasa de Falsos Positivos)", y = "Sensibilidad (Tasa de Verdaderos Positivos)") + theme_minimal(base_size = 14) + theme(plot.title = element_text(face = "bold", hjust = 0.5), plot.subtitle = element_text(hjust = 0.5, color = "gray40", size = 11, lineheight = 1.2), panel.grid.minor = element_blank(), panel.border = element_rect(color = "black", fill = NA, linewidth = 0.5))
+
+# Mostrar el gráfico
+print(grafica_roc_iq11)
+```
+
+
+#### **Regresión de Cox**
+
+Se construyó un modelo de regresión de Cox para evaluar variables asociadas a la presencia de eventos compatibles con nutritrauma durante la estancia en UCI. La variable de tiempo fue `DIAS_UCI` y el evento fue `Tiene_Nutritrauma_IQ11`, codificado como 0 = sin nutritrauma y 1 = nutritrauma.
+
+Este análisis debe interpretarse como una aproximación temporal basada en el tiempo de estancia en UCI. Dado que la base no dispone de la fecha exacta de aparición de cada evento metabólico-orgánico, el modelo no estima estrictamente el tiempo hasta el inicio real del nutritrauma, sino la asociación entre las covariables y la ocurrencia del evento durante el periodo de observación en UCI.
+
+No se incluyeron las variables utilizadas para construir el desenlace del IQ11 (`HYPER_UREA`, `HYPER_TRIGLI`, `LIVER_DYSFUNCTION`, `CHOLESTASIS`, `MIXED_PATTERN`), para evitar circularidad metodológica. Tampoco se incluyó `MUERTO28`, al tratarse de un desenlace posterior y no de una covariable basal o terapéutica explicativa.
+
+En una primera exploración, `TOTALNE2` fue excluida del modelo final al vulnerar de forma significativa el supuesto de proporcionalidad de riesgos, por lo que se repitió el análisis sin esta variable para obtener un modelo de Cox metodológicamente interpretable.
+
+```{r}
+library(dplyr); library(tidyr); library(broom); library(survival); library(purrr); library(knitr)
+
+# 1. Preparación de datos
+# Evento: 0 = Sin nutritrauma / 1 = Nutritrauma
+# Tiempo: DIAS_UCI
+datos_cox_iq11 <- pacientes_TMN_iq11 %>% mutate(Evento_Nutritrauma_IQ11 = case_when(Tiene_Nutritrauma_IQ11 == FALSE ~ 0, Tiene_Nutritrauma_IQ11 == TRUE ~ 1, TRUE ~ NA_real_), STATUS3 = factor(STATUS3, levels = c(0, 1, 2), labels = c("Quirúrgico", "Médico", "Trauma")), Soporte_NPT_IQ11 = factor(case_when(TIPO_SN_Grupo == 1 ~ "NE exclusiva", TIPO_SN_Grupo %in% c(2, 3, 4) ~ "Con NPT", TRUE ~ NA_character_), levels = c("NE exclusiva", "Con NPT")), VM = factor(VM, levels = c(0, 1), labels = c("No", "Sí")), AHTA = factor(AHTA, levels = c(0, 1), labels = c("No", "Sí")), ADBTM = factor(ADBTM, levels = c(0, 1), labels = c("No", "Sí")), ACARDIOP = factor(ACARDIOP, levels = c(0, 1), labels = c("No", "Sí")), ACIRROSIS = factor(ACIRROSIS, levels = c(0, 1), labels = c("No", "Sí")), AIRC = factor(AIRC, levels = c(0, 1), labels = c("No", "Sí")), PISQUINT = factor(PISQUINT, levels = c(0, 1), labels = c("No", "Sí"))) %>% filter(!is.na(Evento_Nutritrauma_IQ11), !is.na(DIAS_UCI), DIAS_UCI > 0)
+
+# 2. Variables candidatas
+# Variables significativas en el univariante, clínicamente interpretables y no circulares
+variables_candidatas_cox_iq11 <- c("SOFA1", "NUTRIC_Score", "AHTA", "ADBTM", "ACARDIOP", "ACIRROSIS", "AIRC", "STATUS3", "HORASIN", "Kcal_14d", "gPROT_14d", "VM", "PISQUINT", "Soporte_NPT_IQ11")
+
+# 3. Función para evaluar modelos de Cox
+evaluar_modelo_cox_iq11 <- function(vars, data) { tryCatch({ d_mod <- data %>% select(all_of(c("DIAS_UCI", "Evento_Nutritrauma_IQ11", vars))) %>% drop_na(); if (nrow(d_mod) < 80 || length(unique(d_mod$Evento_Nutritrauma_IQ11)) < 2 || sum(d_mod$Evento_Nutritrauma_IQ11 == 1, na.rm = TRUE) < 10) return(NULL); mod <- coxph(as.formula(paste("Surv(DIAS_UCI, Evento_Nutritrauma_IQ11) ~", paste(vars, collapse = " + "))), data = d_mod); p_vals <- tidy(mod) %>% filter(term != "(Intercept)"); c_index <- summary(mod)$concordance[1]; data.frame(Variables = paste(vars, collapse = " + "), Num_variables = length(vars), N_modelo = nrow(d_mod), N_eventos = sum(d_mod$Evento_Nutritrauma_IQ11 == 1, na.rm = TRUE), AIC = AIC(mod), Concordancia = as.numeric(c_index), N_significativas = sum(p_vals$p.value <= 0.05, na.rm = TRUE), N_tendencia = sum(p_vals$p.value <= 0.10, na.rm = TRUE)) }, error = function(e) NULL) }
+
+# 4. Combinaciones de variables
+# Se exploran modelos de 2 a 5 variables para evitar sobreajuste
+combinaciones_cox_iq11 <- unlist(lapply(2:min(5, length(variables_candidatas_cox_iq11)), function(k) combn(variables_candidatas_cox_iq11, k, simplify = FALSE)), recursive = FALSE)
+
+# 5. Evaluación masiva de modelos
+resultados_modelos_cox_iq11 <- map_dfr(combinaciones_cox_iq11, evaluar_modelo_cox_iq11, data = datos_cox_iq11)
+
+# 6. Top 15 modelos por menor AIC
+resultados_modelos_cox_iq11 %>% arrange(AIC) %>% slice(1:15) %>% kable(digits = 3, caption = "Top 15 modelos Cox IQ11 por menor AIC")
+
+# 7. Top 15 modelos por mayor concordancia
+resultados_modelos_cox_iq11 %>% arrange(desc(Concordancia)) %>% slice(1:15) %>% kable(digits = 3, caption = "Top 15 modelos Cox IQ11 por mayor concordancia")
+
+# 8. Ranking equilibrado: AIC + concordancia + parsimonia
+mejores_eq_cox_iq11 <- resultados_modelos_cox_iq11 %>% mutate(rank_comb = rank(AIC) + rank(-Concordancia) + Num_variables) %>% arrange(rank_comb) %>% slice(1:15)
+kable(mejores_eq_cox_iq11, digits = 3, caption = "Top 15 modelos Cox IQ11: equilibrio AIC, concordancia y parsimonia")
+
+# 9. Ajuste del modelo final
+mejor_formula_cox_iq11 <- mejores_eq_cox_iq11$Variables[1]
+datos_modelo_final_cox_iq11 <- datos_cox_iq11 %>% select(all_of(c("DIAS_UCI", "Evento_Nutritrauma_IQ11", unlist(strsplit(mejor_formula_cox_iq11, " \\+ "))))) %>% drop_na()
+modelo_final_cox_iq11 <- coxph(as.formula(paste("Surv(DIAS_UCI, Evento_Nutritrauma_IQ11) ~", mejor_formula_cox_iq11)), data = datos_modelo_final_cox_iq11)
+
+# 10. Tabla de resultados del modelo final
+tabla_modelo_final_cox_iq11 <- tidy(modelo_final_cox_iq11) %>% mutate(HR = exp(estimate), IC_inf = exp(estimate - 1.96 * std.error), IC_sup = exp(estimate + 1.96 * std.error), p = ifelse(p.value < 0.001, "<0.001", sprintf("%.3f", p.value)), HR_IC95 = sprintf("%.2f [%.2f - %.2f]", HR, IC_inf, IC_sup), Variable = recode(term, "SOFA1" = "SOFA admisión", "NUTRIC_Score" = "NUTRIC Score", "AHTASí" = "Antecedentes hipertensión", "ADBTMSí" = "Antecedentes diabetes mellitus", "ACARDIOPSí" = "Antecedentes cardiopatía", "ACIRROSISSí" = "Enfermedad hepática crónica", "AIRCSí" = "Fallo renal crónico", "STATUS3Médico" = "Paciente médico vs quirúrgico", "STATUS3Trauma" = "Paciente trauma vs quirúrgico", "HORASIN" = "Horas hasta inicio del soporte nutricional", "Kcal_14d" = "Media kcal/kg/día", "gPROT_14d" = "Media g proteína/kg/día", "VMSí" = "Ventilación mecánica", "PISQUINTSí" = "Isquemia mesentérica", "Soporte_NPT_IQ11Con NPT" = "Con NPT vs NE exclusiva"), Comparacion = "Evento compatible con nutritrauma") %>% select(Comparacion, Variable, HR_IC95, p)
+kable(tabla_modelo_final_cox_iq11, caption = "Modelo final de Cox de factores asociados a eventos compatibles con nutritrauma")
+
+# 11. Métricas del modelo final
+mejores_eq_cox_iq11 %>% slice(1) %>% select(Variables, Num_variables, N_modelo, N_eventos, AIC, Concordancia, N_significativas, N_tendencia) %>% kable(digits = 3, caption = "Métricas del modelo final Cox IQ11")
+
+# 12. Supuesto de proporcionalidad de riesgos
+test_ph_cox_iq11 <- cox.zph(modelo_final_cox_iq11)
+test_ph_cox_iq11
+```
+
+El modelo final de Cox incluyó `NUTRIC_Score`, `STATUS3`, `Kcal_14d`, `PISQUINT` y `Soporte_NPT_IQ11`. El ajuste mostró una **concordancia de 0,758**, compatible con capacidad discriminativa **moderada-alta**, y cumplió el supuesto de proporcionalidad de riesgos de forma global (*p = 0,304*).
+
+En el modelo ajustado, el evento compatible con nutritrauma se asoció de forma independiente con **mayor riesgo nutricional** —NUTRIC Score: HR 1,25; IC95% 1,13–1,38; *p < 0,001*— y con la presencia de **isquemia mesentérica** —HR 6,21; IC95% 2,37–16,26; *p < 0,001*—. El perfil de **paciente médico** mostró una tendencia frente al quirúrgico —HR 2,05; IC95% 0,98–4,30; *p = 0,058*—, mientras que el grupo trauma no presentó asociación.
+
+La **media calórica administrada** se asoció de forma inversa al evento —HR 0,91; IC95% 0,87–0,95; *p < 0,001*—, al igual que el soporte **con NPT frente a NE exclusiva** —HR 0,41; IC95% 0,23–0,71; *p = 0,002*—. Estos resultados deben interpretarse con cautela: no indican necesariamente un efecto protector causal, sino un patrón de menor ocurrencia del evento en determinados perfiles terapéuticos dentro de la estructura observacional de la cohorte.
+
+En conjunto, el modelo identifica el IQ11 como un marcador asociado a **riesgo nutricional elevado**, **compromiso intestinal grave** y **perfil clínico-terapéutico diferenciado**, más que como una consecuencia atribuible de forma directa y aislada al TMN.
+
+### **Supervivencia a 28 días según presencia de eventos compatibles con nutritrauma**
+
+Se realizó un análisis de supervivencia mediante curvas de Kaplan-Meier para comparar la supervivencia acumulada a 28 días entre pacientes con y sin eventos compatibles con nutritrauma según la definición operacional del IQ11. La variable de tiempo fue `ESTADA28`, el evento fue la mortalidad a 28 días (`MUERTO28`) y el factor de estratificación fue la presencia de nutritrauma (`Tiene_Nutritrauma_IQ11`).
+
+La comparación entre curvas se realizó mediante test de log-rank.
+
+```{r}
+library(dplyr); library(survival); library(survminer); library(knitr)
+
+# Tiempo: ESTADA28 | Evento: MUERTO28 | Grupos: Sin nutritrauma / Nutritrauma
+
+# 1. Preparar base
+datos_km_iq11 <- pacientes_TMN_iq11 %>% mutate(Grupo_Nutritrauma_KM = factor(case_when(Tiene_Nutritrauma_IQ11 == FALSE ~ "Sin nutritrauma", Tiene_Nutritrauma_IQ11 == TRUE ~ "Nutritrauma", TRUE ~ NA_character_), levels = c("Sin nutritrauma", "Nutritrauma")), Evento_Muerte28 = case_when(MUERTO28 == 1 ~ 1, MUERTO28 == 0 ~ 0, TRUE ~ NA_real_)) %>% filter(!is.na(Grupo_Nutritrauma_KM), !is.na(ESTADA28), !is.na(Evento_Muerte28))
+
+# 2. Comprobar n y eventos por grupo
+datos_km_iq11 %>% group_by(Grupo_Nutritrauma_KM) %>% summarise(n = n(), muertes_28d = sum(Evento_Muerte28 == 1, na.rm = TRUE), mortalidad_28d = round(mean(Evento_Muerte28 == 1, na.rm = TRUE) * 100, 1), .groups = "drop") %>% kable(caption = "Mortalidad a 28 días según presencia de eventos compatibles con nutritrauma")
+
+# 3. Ajustar Kaplan-Meier y test de log-rank
+km_iq11 <- survfit(Surv(ESTADA28, Evento_Muerte28) ~ Grupo_Nutritrauma_KM, data = datos_km_iq11)
+logrank_iq11 <- survdiff(Surv(ESTADA28, Evento_Muerte28) ~ Grupo_Nutritrauma_KM, data = datos_km_iq11)
+p_logrank_iq11 <- 1 - pchisq(logrank_iq11$chisq, length(logrank_iq11$n) - 1)
+p_logrank_iq11_txt <- ifelse(p_logrank_iq11 < 0.001, "<0.001", sprintf("%.3f", p_logrank_iq11))
+
+# 4. Gráfico Kaplan-Meier según presencia de nutritrauma
+ggsurvplot(km_iq11, data = datos_km_iq11, risk.table = TRUE, pval = paste0("Log-rank p = ", p_logrank_iq11_txt), conf.int = FALSE, censor = TRUE, xlab = "Días de seguimiento", ylab = "Supervivencia acumulada", title = "Supervivencia a 28 días según presencia de eventos compatibles con nutritrauma", legend.title = "IQ11", legend.labs = c("Sin nutritrauma", "Nutritrauma"), break.time.by = 7, xlim = c(0, 28), risk.table.height = 0.25, ggtheme = theme_minimal())
+```
+
+El análisis de Kaplan-Meier muestra una **separación precoz y sostenida** de las curvas de supervivencia según presencia de eventos compatibles con nutritrauma. Los pacientes con IQ11 positivo presentan una **menor supervivencia acumulada a 28 días**, con una mortalidad del **46,5%** frente al **21,9%** en el grupo sin nutritrauma. La diferencia entre curvas fue **estadísticamente significativa** mediante log-rank —*p < 0,001*—, lo que confirma una asociación pronóstica clara entre la aparición de eventos metabólico-orgánicos compatibles con nutritrauma y peor evolución vital. No obstante, este análisis es **no ajustado**; por tanto, la diferencia observada debe interpretarse como señal de **mayor riesgo clínico agregado**, no como evidencia causal directa del nutritrauma sobre la mortalidad.
+
+### **Conclusiones IQ11**
+
+En conjunto, el análisis del IQ11 evidencia una **incidencia elevada de eventos compatibles con nutritrauma** en la cohorte de pacientes con tratamiento médico nutricional (TMN). El resultado supera el estándar máximo aceptable definido para el indicador, por lo que debe interpretarse como una **señal relevante de seguridad nutricional**.
+
+No obstante, el hallazgo no debe leerse como una atribución causal directa del daño al TMN en todos los casos. La definición operacional aplicada identifica **alteraciones metabólico-orgánicas compatibles con nutritrauma**, pero estas se producen en un contexto clínico complejo, donde confluyen gravedad basal, disfunción orgánica previa, sepsis, shock, insuficiencia renal, hepatopatía, catabolismo y duración del soporte nutricional.
+
+**Patrón de eventos detectados**
+
+El desglose del indicador muestra que el IQ11 no se explica por un único mecanismo, sino por un patrón mixto de alteraciones:
+
+- **Componente renal-metabólico**: La hiperuremia relevante fue el dominio predominante, lo que orienta la atención hacia el control de urea, función renal, catabolismo, balance nitrogenado y adecuación del aporte proteico.
+
+- **Componente hepato-biliar**: La disfunción hepática global constituyó el segundo eje del indicador, compatible con un perfil de vulnerabilidad hepática o metabólica durante el TMN.
+
+- **Componente lipídico**: La hipertrigliceridemia tuvo menor peso cuantitativo, por lo que la sobrecarga lipídica no parece ser el principal contribuyente del IQ11 en esta cohorte.
+
+Este patrón sugiere que la seguridad del TMN no depende solo de evitar excesos evidentes de aporte, sino de mantener una **monitorización metabólica dinámica**, especialmente en pacientes con alta carga de disfunción orgánica.
+
+**Caracterización de los pacientes con eventos compatibles con nutritrauma**
+
+El análisis univariante mostró que los pacientes con IQ11 positivo conforman un subgrupo clínicamente diferenciado. Presentaron mayor gravedad basal, mayor riesgo nutricional, más comorbilidad cardiometabólica y orgánica, mayor frecuencia de ventilación mecánica e isquemia mesentérica, así como peor evolución vital.
+
+Desde el punto de vista nutricional, el grupo con nutritrauma no se comportó como un grupo simplemente “sobrealimentado”. Por el contrario, presentó menor aporte calórico y proteico medio, lo que sugiere un fenotipo de paciente **más difícil de nutrir**, con mayor vulnerabilidad metabólica y peor tolerancia global al soporte.
+
+**Respaldos de los modelos multivariantes**
+
+Los modelos multivariantes refuerzan esta interpretación:
+
+- **Regresión logística binaria**: Identificó como variables asociadas de forma independiente al IQ11 la gravedad orgánica basal, el riesgo nutricional, el perfil médico y el retraso en el inicio del soporte. El modelo mostró una capacidad discriminativa moderada-buena.
+
+- **Modelo de Cox exploratorio**: Tras excluir la variable de días de nutrición enteral por vulnerar el supuesto de proporcionalidad de riesgos, el modelo final mantuvo una capacidad discriminativa aceptable y confirmó la asociación del evento con mayor riesgo nutricional, isquemia mesentérica y perfil clínico-terapéutico diferenciado.
+
+- **Análisis Kaplan-Meier**: La presencia de eventos compatibles con nutritrauma se asoció con una reducción clara de la supervivencia acumulada a 28 días. Esta asociación fue estadísticamente significativa, aunque debe interpretarse como una comparación pronóstica no ajustada.
+
+*Nota de prudencia*: Los modelos no demuestran causalidad directa. Más bien sitúan el IQ11 como un marcador compuesto de **vulnerabilidad clínica, riesgo nutricional, disfunción orgánica y peor pronóstico**.
+
+**Auditoría clínica y oportunidades de mejora**
+
+Desde la perspectiva de calidad asistencial, el IQ11 debe entenderse como un indicador de **seguridad global del soporte nutricional**. Su incumplimiento sugiere la necesidad de reforzar varios puntos críticos:
+
+1. **Monitorización seriada de urea, función renal y balance nitrogenado**, especialmente en pacientes con alto catabolismo o insuficiencia renal.
+
+2. **Vigilancia hepato-biliar sistemática**, con especial atención a colestasis, patrón mixto y disfunción hepática durante el TMN.
+
+3. **Control del aporte calórico y proteico real**, evitando tanto la infraadministración persistente como los incrementos no individualizados.
+
+4. **Identificación precoz de pacientes de alto riesgo**, especialmente aquellos con mayor NUTRIC Score, mayor SOFA, perfil médico o complicaciones intestinales graves.
+
+5. **Integración del IQ11 con los indicadores de monitorización**, ya que la detección precoz del nutritrauma depende de una trazabilidad analítica y nutricional adecuada.
+
+**Impacto pronóstico y relevancia del indicador**
+
+La marcada diferencia de supervivencia entre pacientes con y sin eventos compatibles con nutritrauma refuerza la relevancia clínica del IQ11. El indicador no mide únicamente una complicación analítica aislada, sino un fenómeno de seguridad que se asocia a peor evolución global.
+
+En consecuencia, el IQ11 debe interpretarse como un **indicador centinela de vulnerabilidad metabólico-orgánica durante el TMN**. Su incumplimiento no señala exclusivamente un problema de prescripción nutricional, sino la necesidad de mejorar la individualización, monitorización y ajuste dinámico del soporte nutricional en el paciente crítico.
+
