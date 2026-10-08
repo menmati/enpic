@@ -1,0 +1,277 @@
+---
+title: "Indicador 8: Adecuación Temporal del Inicio de la Nutrición Parenteral Complementaria (NPC)"
+author: "Carmen Macías Portillo"
+date: "`r Sys.Date()`"
+output: 
+  prettydoc::html_pretty:
+    theme: tactile
+    toc: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+```{r}
+# Cargamos la librería 'haven', necesaria para cargar archivos .sav (SPSS)
+library(haven)
+library(dplyr)
+library(tidyr)
+library(lubridate)
+library(ggplot2)
+# Cargamos el archivo .sav
+enpic <- read_sav("ENPIC_BMI_525.sav")
+```
+
+## **Indicador de Calidad 8** (**IQ8**): Adecuación temporal del inicio de la nutrición parenteral complementaria (NPC)
+
+Para evaluar la adecuación temporal del inicio de la nutrición parenteral complementaria en pacientes con nutrición enteral insuficiente, el indicador se ha operativizado bajo los siguientes criterios técnicos:
+
+- **Población diana** ($N$): Pacientes con al menos cuatro días de soporte nutricional, inicio documentado de nutrición enteral, aporte calórico registrado en el día 4 y datos antropométricos válidos para calcular el peso de referencia. Dentro de esta población, el denominador quedó restringido a los pacientes que no alcanzaron el 60% del objetivo calórico teórico al cuarto día, definido como un aporte inferior a 15 kcal/kg/día.
+
+- **Casos favorables** ($n$): El numerador se definió como el número de pacientes que iniciaron nutrición parenteral complementaria entre las 96 y 120 horas desde el inicio de la nutrición enteral, es decir, dentro de las 24 horas posteriores a la detección del déficit al comienzo del quinto día. Se consideró NPC a los pacientes con `TIPO_NPT == 2`.
+
+La proporción de cumplimiento se calculó como el cociente entre pacientes con NPC iniciada a tiempo y pacientes con nutrición enteral insuficiente al cuarto día.
+
+$$IQ8 = \left( \frac{\text{Nº de pacientes con NPC iniciada dentro de las 24 h posteriores a la detección}}{\text{Nº de pacientes con NE que no alcanzan el 60% de requerimientos al día 4}} \right) \times 100$$
+
+Para cuantificar la precisión de la estimación se calculó el intervalo de confianza exacto binomial de Clopper-Pearson al 95%.
+
+```{r}
+library(dplyr); library(lubridate); library(ggplot2)
+
+# 1. Formatos seguros para fechas
+formatos_fecha <- c("Ymd_HMS", "Ymd_HM", "dmy_HMS", "dmy_HM")
+
+# 2. Denominador potencial: pacientes con >=4 días de soporte nutricional, inicio de NE documentado, CALORIA4 y datos antropométricos válidos
+pacientes_tmn_4dias_iq8 <- enpic %>%
+  filter(TOTAL_DIAS_SN >= 4, !is.na(CALORIA4), !is.na(Inicio_NE), !is.na(PESOACT), !is.na(TALLA), !is.na(BMI)) %>%
+  mutate(Peso_Ideal = 22.5 * (TALLA ^ 2), Peso_Ajustado = Peso_Ideal + 0.25 * (PESOACT - Peso_Ideal), Peso_Ref = ifelse(BMI < 30, PESOACT, Peso_Ajustado), Kcal_kg_D4 = CALORIA4 / Peso_Ref)
+
+# 3. Denominador final: pacientes con NE insuficiente al día 4 (<15 kcal/kg/día = <60% de 25 kcal/kg/día)
+pacientes_riesgo_IQ8 <- pacientes_tmn_4dias_iq8 %>%
+  filter(Kcal_kg_D4 < 15) %>%
+  mutate(Fecha_Inicio_NE = parse_date_time(Inicio_NE, orders = formatos_fecha), Fecha_Inicio_NPT = parse_date_time(Inicio_NPT, orders = formatos_fecha), Horas_Rescate = as.numeric(difftime(Fecha_Inicio_NPT, Fecha_Inicio_NE, units = "hours")), NPC_a_tiempo = !is.na(Horas_Rescate) & Horas_Rescate >= 96 & Horas_Rescate <= 120 & TIPO_NPT == 2)
+
+Denominador_IQ8 <- nrow(pacientes_riesgo_IQ8)
+
+# 4. Numerador: NPC real iniciada entre 96 y 120 h desde el inicio de NE
+Numerador_IQ8 <- sum(pacientes_riesgo_IQ8$NPC_a_tiempo, na.rm = TRUE)
+
+# 5. Cálculo del indicador
+IQ8 <- round((Numerador_IQ8 / Denominador_IQ8) * 100, 2)
+
+NoCumple_IQ8 <- Denominador_IQ8 - Numerador_IQ8
+porcentaje_no_cumple_IQ8 <- round((NoCumple_IQ8 / Denominador_IQ8) * 100, 2)
+
+# 6. Intervalo de confianza exacto binomial de Clopper-Pearson
+test_iq8 <- binom.test(Numerador_IQ8, Denominador_IQ8, conf.level = 0.95)
+
+limite_inf_IQ8 <- round(test_iq8$conf.int[1] * 100, 2)
+limite_sup_IQ8 <- round(test_iq8$conf.int[2] * 100, 2)
+
+# 7. Resultados
+cat("Pacientes con NPC iniciada dentro de las 24 h posteriores a la detección:", Numerador_IQ8, "pacientes\n"); cat("Pacientes con NE que no alcanzan el 60% de requerimientos al día 4:", Denominador_IQ8, "pacientes\n"); cat("El", IQ8, "% de los pacientes con NE que no alcanzaron el 60% de requerimientos al día 4 iniciaron NPC dentro de las 24 h posteriores con un IC95% de [", limite_inf_IQ8, "% -", limite_sup_IQ8, "%]\n"); cat("No cumplimiento:", NoCumple_IQ8, "pacientes (", porcentaje_no_cumple_IQ8, "%)\n")
+
+# 8. Gráfico de donut del IQ8
+datos_iq8 <- data.frame(Estado = c("Éxito (NPC a tiempo)", "Fallo (Inercia/Retraso)"), Valor = c(Numerador_IQ8, Denominador_IQ8 - Numerador_IQ8) ) %>% mutate(Porcentaje = Valor / sum(Valor) * 100)
+
+texto_porcentaje_iq8 <- paste0(IQ8, "%")
+texto_subtitulo_iq8 <- paste0( "Total denominador: ", Denominador_IQ8, " pacientes | Estándar: ≥90% (FALLO CRÍTICO)")
+texto_centro_inferior <- paste0("NPC A TIEMPO\n(n = ", Numerador_IQ8, ")")
+
+grafico_donut_iq8 <- ggplot(datos_iq8, aes(x = 2, y = Porcentaje, fill = Estado)) + geom_col(color = "white", width = 1) + coord_polar(theta = "y", start = 0) + xlim(0.5, 2.5) + scale_fill_manual(values = c("Éxito (NPC a tiempo)" = "#27AE60", "Fallo (Inercia/Retraso)" = "#E0E0E0")) + theme_void() + labs(title = "IQ8: Adecuación temporal del inicio de NPC", subtitle = texto_subtitulo_iq8) + theme(plot.title = element_text(face = "bold", size = 16, hjust = 0.5), plot.subtitle = element_text(color = "#C0392B", size = 12, hjust = 0.5, margin = margin(b = 10)), legend.position = "bottom", legend.title = element_blank(), legend.text = element_text(size = 11)) + annotate("text", x = 0.5, y = 0, label = texto_porcentaje_iq8, size = 12, fontface = "bold", color = "#27AE60", vjust = -0.3) + annotate("text", x = 0.5, y = 0, label = texto_centro_inferior, size = 4, fontface = "bold", color = "gray40", vjust = 1.3, lineheight = 1.1)
+
+print(grafico_donut_iq8)
+```
+
+El IQ8 alcanzó una tasa de cumplimiento del **`r IQ8`%**, correspondiente a **`r Numerador_IQ8` paciente** con inicio de nutrición parenteral complementaria dentro de la ventana temporal adecuada sobre un total de **`r Denominador_IQ8` pacientes** con nutrición enteral insuficiente al cuarto día. El intervalo de confianza exacto binomial al 95% fue de **[`r limite_inf_IQ8`% - `r limite_sup_IQ8`%]**.
+
+El resultado se sitúa muy por debajo del estándar definido para este indicador, establecido en ≥90%. Se objetivó incumplimiento en **`r NoCumple_IQ8` pacientes**, lo que representa el **`r porcentaje_no_cumple_IQ8`%** de la población evaluable.
+
+En términos clínicos, el hallazgo indica una **muy baja activación de NPC** tras detectar fracaso relevante de la nutrición enteral al cuarto día. Al incorporar la variable `TIPO_NPT == 2`, el indicador queda metodológicamente más preciso, ya que solo contabiliza como casos favorables las nutriciones parenterales realmente complementarias y no cualquier inicio de nutrición parenteral.
+
+### **Análisis descriptivo complementario**
+
+Dado el número extremadamente bajo de pacientes que cumplieron el criterio estricto del IQ8, **no resulta metodológicamente adecuado realizar análisis univariantes ni multivariantes** tomando el cumplimiento del indicador como variable dependiente.
+
+Con solo 1 evento favorable, cualquier comparación entre pacientes con y sin NPC a tiempo sería estadísticamente inestable. Las pruebas univariantes tendrían muy baja potencia y alto riesgo de resultados espurios. Asimismo, una regresión logística multivariante no sería válida, ya que el número de eventos es insuficiente incluso para introducir una única variable explicativa con garantías.
+
+Por este motivo, se realizó un análisis descriptivo complementario orientado a caracterizar la evolución posterior de los pacientes incluidos en el denominador del IQ8. Este análisis no pretende identificar factores predictores, sino describir el proceso asistencial y nutricional tras detectarse aporte enteral insuficiente al cuarto día.
+
+#### **Desglose temporal de los pacientes del denominador**
+
+En primer lugar, se clasificaron los pacientes del denominador según el momento de inicio registrado de nutrición parenteral respecto al inicio de la nutrición enteral. Este análisis permite diferenciar la ausencia de NPT, las inconsistencias cronológicas, los inicios precoces, los inicios dentro de la ventana temporal del IQ8 y los rescates posteriores.
+
+Debe tenerse en cuenta que este desglose describe el inicio de NPT registrado en la base de datos, mientras que el numerador estricto del IQ8 solo contabiliza como cumplimiento los casos con NPC real (`TIPO_NPT == 2`) dentro de la ventana adecuada.
+
+```{r}
+library(knitr)
+
+desglose_iq8 <- pacientes_riesgo_IQ8 %>%
+  mutate(Comportamiento = case_when(is.na(Horas_Rescate) ~ "1. Sin inicio registrado de NPT", Horas_Rescate < 0 ~ "2. Inconsistencia temporal / NPT previa a NE", Horas_Rescate >= 0 & Horas_Rescate < 96 ~ "3. NPT precoz respecto a la ventana IQ8", Horas_Rescate >= 96 & Horas_Rescate <= 120 ~ "4. NPT en ventana adecuada IQ8", Horas_Rescate > 120 ~ "5. NPT posterior a la ventana IQ8")) %>%
+  group_by(Comportamiento) %>%
+  summarise(Total_Pacientes = n(), .groups = "drop") %>%
+  arrange(Comportamiento)
+
+desglose_iq8 %>% kable(col.names = c("Patrón temporal respecto al IQ8", "Número de pacientes"), caption = "Desglose de los comportamientos temporales en el rescate con NPT")
+```
+
+El patrón dominante fue la ausencia de inicio registrado de NPT tras el déficit calórico del cuarto día, observado en 94 de los 117 pacientes del denominador. Además, se identificaron 10 casos con inconsistencia temporal, en los que la NPT constaba como previa al inicio de la NE.
+
+Aunque 3 pacientes presentaron inicio de NPT dentro de la ventana temporal del IQ8, solo 1 correspondía a nutrición parenteral complementaria según `TIPO_NPT == 2`. Por ello, el cumplimiento estricto del indicador fue inferior al que se obtendría si se considerase cualquier modalidad de NPT.
+
+#### **Seguimiento longitudinal del aporte calórico tras el día 4**
+
+A continuación, se evaluó la evolución calórica entre los días 5 y 14 en los pacientes del denominador. El objetivo fue identificar cuántos pacientes alcanzaron posteriormente el umbral de 15 kcal/kg/día y en qué momento ocurrió.
+
+Este análisis describe la recuperación del aporte calórico tras el déficit detectado al cuarto día, independientemente de que dicha recuperación se produjera con NE, con NPT o mediante soporte combinado.
+
+```{r}
+# 1. Asegurar formato numérico de las calorías del día 5 al 14
+cols_calorias <- paste0("CALORIA", 5:14)
+
+for (col in cols_calorias) {if (col %in% names(pacientes_riesgo_IQ8)) {pacientes_riesgo_IQ8[[col]] <- as.numeric(gsub(",", ".", pacientes_riesgo_IQ8[[col]]))}}
+
+# 2. Transformar a formato largo y calcular kcal/kg
+seguimiento_calorico <- pacientes_riesgo_IQ8 %>%
+  select(PACIENTE, Peso_Ref, any_of(cols_calorias)) %>%
+  pivot_longer(cols = starts_with("CALORIA"), names_to = "Dia", names_prefix = "CALORIA", values_to = "Calorias_Totales") %>%
+  mutate(Dia = as.numeric(Dia), Kcal_kg = Calorias_Totales / Peso_Ref) %>%
+  filter(!is.na(Kcal_kg) & Calorias_Totales > 0)
+
+# 3. Primer día en que cada paciente alcanza al menos 15 kcal/kg
+exito_calorico <- seguimiento_calorico %>%
+  filter(Kcal_kg >= 15) %>%
+  group_by(PACIENTE) %>%
+  summarise(Dia_Exito = min(Dia), Kcal_kg_Logradas = Kcal_kg[which.min(Dia)], .groups = "drop")
+
+# 4. Resumen por día
+resumen_exito <- exito_calorico %>%
+  group_by(Dia_Exito) %>%
+  summarise(Total_Pacientes = n(), .groups = "drop") %>%
+  arrange(Dia_Exito)
+
+knitr::kable(resumen_exito, col.names = c("Día de éxito calórico", "Número de pacientes"), caption = "Distribución de pacientes según el día de consecución del éxito calórico")
+print(paste("Total de pacientes que alcanzan posteriormente el 60%:", nrow(exito_calorico)))
+print(paste("Pacientes que no alcanzan el 60% entre los días 5 y 14:", Denominador_IQ8 - nrow(exito_calorico)))
+```
+
+De los 117 pacientes incluidos en el denominador, 85 alcanzaron posteriormente el umbral de 15 kcal/kg/día entre los días 5 y 14. Por el contrario, 32 pacientes no alcanzaron dicho umbral durante el periodo de seguimiento disponible.
+
+La recuperación fue temprana en una proporción relevante de pacientes: 40 alcanzaron el umbral en el día 5, 15 en el día 6 y 11 en el día 7. Esto indica que la mayor parte de las recuperaciones calóricas se concentró durante los tres primeros días posteriores a la detección del déficit.
+
+```{r}
+# 5. Gráfico de recuperación calórica
+grafico_exito_calorico <- ggplot(resumen_exito, aes(x = Dia_Exito, y = Total_Pacientes)) + geom_line(color = "#1f77b4", linewidth = 1.2) + geom_point(color = "#1f77b4", size = 4) + geom_text(aes(label = Total_Pacientes), vjust = -1.5, size = 4, fontface = "bold") + scale_x_continuous(breaks = seq(5, 14, by = 1), limits = c(4.5, 14.5)) + scale_y_continuous(limits = c(0, max(resumen_exito$Total_Pacientes) + 5)) + labs(title = "Pacientes que alcanzan el 60% de requerimientos calóricos\n(≥15 kcal/kg)", subtitle = "Primer día en que superan el umbral tras el déficit detectado en el día 4", x = "Día de tratamiento", y = "Número de pacientes") + theme_minimal() + theme(plot.title = element_text(size = 13, face = "bold", margin = margin(b = 5)), plot.subtitle = element_text(size = 11, color = "gray40", margin = margin(b = 15)), axis.title.x = element_text(size = 12, face = "bold", margin = margin(t = 10)), axis.title.y = element_text(size = 12, face = "bold", margin = margin(r = 10)), panel.grid.minor = element_blank(), panel.grid.major.x = element_blank())
+
+print(grafico_exito_calorico)
+```
+
+El gráfico muestra una distribución descendente del tiempo hasta la recuperación calórica. El máximo se concentra en el día 5, con 40 pacientes, seguido de un descenso progresivo en los días posteriores.
+
+Desde el punto de vista descriptivo, este patrón sugiere que una parte importante de los pacientes con déficit calórico al cuarto día alcanzó el umbral mínimo poco después, aunque en la mayoría de los casos sin que ello se tradujera en cumplimiento estricto del IQ8.
+
+#### **Resumen estadístico del tiempo hasta la recuperación calórica**
+
+Se calculó un resumen del tiempo hasta la recuperación calórica entre los pacientes que alcanzaron posteriormente el umbral de 15 kcal/kg/día. Se emplearon medidas de tendencia central y dispersión no paramétricas, dado que la distribución se concentró en los primeros días y mostró cola hacia valores tardíos.
+
+```{r}
+resumen_estadistico <- exito_calorico %>%
+  summarise(Total_Exito = n(), Media_Dias = round(mean(Dia_Exito), 2), Mediana_Dias = median(Dia_Exito), Q1_Percentil25 = quantile(Dia_Exito, 0.25), Q3_Percentil75 = quantile(Dia_Exito, 0.75), Min_Dia = min(Dia_Exito), Max_Dia = max(Dia_Exito))
+
+knitr::kable(resumen_estadistico, col.names = c("Total pacientes", "Media (días)", "Mediana", "Q1 (P25)", "Q3 (P75)", "Mínimo", "Máximo"), caption = "Resumen estadístico de los días hasta alcanzar el éxito calórico")
+```
+
+Entre los pacientes que alcanzaron posteriormente el umbral calórico, la mediana del día de recuperación fue el día 6, con un rango intercuartílico entre los días 5 y 7. La media fue de 6,44 días, ligeramente superior a la mediana por la presencia de recuperaciones tardías hasta el día 14.
+
+Este resultado confirma que, cuando se produjo recuperación calórica, esta tendió a concentrarse precozmente tras el día 4.
+
+#### **Relación entre recuperación calórica e inicio de NPT**
+
+Finalmente, se exploró la relación temporal entre el día de recuperación calórica y el inicio registrado de NPT. Este análisis no evalúa causalidad, sino únicamente la secuencia temporal entre ambos eventos.
+
+La clasificación diferencia pacientes que recuperaron el umbral sin NPT registrada, pacientes con inconsistencias cronológicas, pacientes cuya recuperación fue temporalmente compatible con el inicio de NPT y pacientes que alcanzaron el umbral antes de iniciar NPT.
+
+```{r}
+analisis_vias <- exito_calorico %>%
+  left_join(pacientes_riesgo_IQ8 %>%
+      select(PACIENTE, Horas_Rescate), by = "PACIENTE") %>%
+  mutate(Dia_Inicio_NPT = floor(Horas_Rescate / 24) + 1, Mecanismo_Exito = case_when(is.na(Horas_Rescate) ~ "1. Recuperación sin NPT registrada", Horas_Rescate < 0 ~ "2. Inconsistencia temporal / NPT previa a NE", Dia_Inicio_NPT <= Dia_Exito ~ "3. Recuperación temporalmente asociada a NPT", Dia_Inicio_NPT > Dia_Exito ~ "4. Recuperación antes del inicio de NPT"))
+
+resumen_vias <- analisis_vias %>% group_by(Mecanismo_Exito) %>% summarise(Total_Pacientes = n(), .groups = "drop") %>% arrange(Mecanismo_Exito)
+knitr::kable(resumen_vias, col.names = c("Mecanismo de éxito calórico", "Número de pacientes"), caption = "Distribución de pacientes según el mecanismo de consecución del éxito calórico")
+
+# Gráfico del mecanismo temporal de recuperación
+resumen_vias_grafico <- resumen_vias %>%
+  mutate(Origen_Clinico = case_when(grepl("sin NPT registrada", Mecanismo_Exito) ~ "Evolución enteral", grepl("antes del inicio de NPT", Mecanismo_Exito) ~ "Evolución enteral", grepl("asociada a NPT", Mecanismo_Exito) ~ "Rescate con NPT", grepl("Inconsistencia", Mecanismo_Exito) ~ "Inconsistencia temporal"), Mecanismo_Exito = case_match(Mecanismo_Exito, "2. Inconsistencia temporal / NPT previa a NE" ~ "2. Inconsistencia temporal\n(NPT previa a NE)", .default = Mecanismo_Exito))
+
+resumen_vias_grafico$Mecanismo_Exito <- factor(resumen_vias_grafico$Mecanismo_Exito, levels = rev(resumen_vias_grafico$Mecanismo_Exito))
+
+grafico_rescate <- ggplot(resumen_vias_grafico, aes(x = Mecanismo_Exito, y = Total_Pacientes, fill = Origen_Clinico)) + geom_bar(stat = "identity", width = 0.6, color = "black", alpha = 0.8) + geom_text(aes(label = Total_Pacientes), hjust = -0.5, size = 5, fontface = "bold") + coord_flip() + scale_fill_manual(values = c("Evolución enteral" = "#4CAF50", "Rescate con NPT" = "#FF9800", "Inconsistencia temporal" = "#9E9E9E")) + scale_y_continuous(limits = c(0, max(resumen_vias_grafico$Total_Pacientes) + 7)) + labs(title = "Mecanismo temporal de recuperación calórica", subtitle = "La mayoría de los pacientes que alcanzaron el umbral lo hicieron sin NPT registrada o antes de su inicio.", x = "", y = "Número de pacientes", fill = "Agrupación clínica") + theme_minimal() + theme(plot.title = element_text(face = "bold", size = 14), plot.subtitle = element_text(size = 9, color = "grey30", margin = margin(b = 15)), axis.text.y = element_text(size = 8, face = "bold", color = "black"), axis.text.x = element_text(size = 9), legend.position = "bottom", legend.title = element_text(face = "bold"), panel.grid.major.y = element_blank())
+
+print(grafico_rescate)
+```
+
+De los 85 pacientes que alcanzaron posteriormente el umbral calórico, 64 lo hicieron sin inicio registrado de NPT. Otros 4 pacientes alcanzaron el umbral antes del inicio de NPT, por lo que su recuperación tampoco puede atribuirse temporalmente a la nutrición parenteral.
+
+Solo 7 pacientes presentaron una secuencia temporal compatible con recuperación calórica tras el inicio de NPT. Además, se identificaron 10 casos con inconsistencia temporal, en los que la NPT figuraba como previa al inicio de la NE.
+
+En conjunto, el patrón sugiere que la recuperación calórica posterior al déficit del día 4 se produjo mayoritariamente por evolución del aporte enteral o por ajuste del soporte ya instaurado, más que por activación protocolizada de nutrición parenteral.
+
+### **Conclusión Indicador de Calidad 8**
+
+En conjunto, el análisis del IQ8 evidencia un **incumplimiento crítico** de la adecuación temporal del inicio de nutrición parenteral complementaria (NPC) en pacientes con nutrición enteral (NE) insuficiente al cuarto día.
+
+El problema principal no parece ser únicamente la existencia de un déficit calórico precoz, sino la **ausencia de una respuesta protocolizada de rescate nutricional** cuando dicho déficit se objetiva. La mayoría de los pacientes incluidos en el denominador no presentaron un inicio registrado de NPT tras la detección del aporte enteral insuficiente, y solo una proporción mínima recibió NPC real dentro de la ventana temporal establecida.
+
+**Interpretación del fallo del indicador**
+
+El IQ8 no refleja simplemente un bajo uso de nutrición parenteral, sino una **discordancia entre la detección del fracaso enteral y la activación de la estrategia complementaria prevista**.
+La incorporación de la variable `TIPO_NPT == 2` permite afinar la interpretación: no basta con que exista inicio de nutrición parenteral en la ventana temporal, sino que debe tratarse específicamente de NPC. Al aplicar este criterio estricto, el cumplimiento se reduce de forma muy marcada, lo que refuerza la idea de que la NPC no parece estar integrada como respuesta sistemática ante el aporte enteral insuficiente.
+
+**Evolución posterior del déficit calórico**
+
+El análisis longitudinal muestra que una parte importante de los pacientes acabó alcanzando posteriormente el umbral mínimo de aporte calórico. Sin embargo, esta recuperación se produjo mayoritariamente **sin NPT registrada o antes del inicio de la misma**.
+
+- Esto sugiere que la recuperación calórica pudo deberse a una *progresión espontánea* o a *ajustes de la NE* ya instaurada, más que a una estrategia formal de rescate.
+
+- Por tanto, el bajo cumplimiento del IQ8 no implica necesariamente que todos los pacientes permanecieran indefinidamente hipoalimentados, pero sí indica que **la corrección del déficit no se produjo mediante el mecanismo protocolizado** que evalúa el indicador.
+
+**Valor del análisis descriptivo complementario**
+
+Dado el número extremadamente bajo de eventos favorables, **no era metodológicamente adecuado realizar modelos predictivos** ni análisis comparativos convencionales. La decisión de limitar el estudio a un análisis descriptivo fue estadísticamente correcta.
+Este enfoque permitió caracterizar el proceso asistencial sin forzar inferencias inestables, identificando que el problema no está en una variable clínica aislada, sino en el **circuito asistencial** de detección, decisión e inicio de NPC.
+
+**Problemas detectados en el proceso asistencial**
+
+El análisis del IQ8 señala varios puntos críticos, que apuntan tanto a un problema clínico-organizativo como documental:
+
+- **Ausencia frecuente** de inicio registrado de NPT tras detectar un aporte enteral insuficiente.
+
+- **Escasa utilización** de la NPC como modalidad específica de rescate.
+
+- **Recuperación calórica posterior** en muchos pacientes sin activación formal de NPC.
+
+**Auditoría clínica y oportunidades de mejora**
+
+Desde la perspectiva de calidad asistencial, el IQ8 identifica una oportunidad de mejora muy clara: **protocolizar la revisión del aporte calórico** al cuarto día de NE y establecer un circuito explícito de decisión. Las acciones prioritarias deberían centrarse en:
+
+1. **Revisar sistemáticamente** el aporte calórico real al inicio del quinto día de NE.
+
+2. **Identificar** a los pacientes que no alcanzan el 60% de los requerimientos.
+
+3. **Registrar de forma explícita** la decisión clínica (iniciar NPC, optimizar NE o no intensificar el soporte).
+
+4. **Diferenciar documentalmente** entre NPT total y NPC.
+
+5. **Justificar clínicamente** los casos en los que no se activa la NPC pese a persistir el aporte insuficiente.
+
+*Más que aumentar indiscriminadamente el uso de nutrición parenteral, la mejora debe orientarse a garantizar una decisión clínica trazable y protocolizada ante el fracaso de la nutrición enteral*.
+
+**Relevancia final del indicador**
+
+El IQ8 es un indicador especialmente exigente porque evalúa si el sistema asistencial **responde en el momento adecuado** ante una insuficiencia objetiva. Su incumplimiento es una señal de alerta clara.
+
+No debe interpretarse exclusivamente como un fallo individual de prescripción, sino como un **marcador de baja protocolización** del rescate nutricional, posible variabilidad clínica y necesidad de mejorar el registro. En consecuencia, el IQ8 constituye uno de los puntos más débiles de la auditoría nutricional y su mejora requiere intervenir sobre el proceso completo: monitorización, detección, decisión clínica y calidad del registro.
+
