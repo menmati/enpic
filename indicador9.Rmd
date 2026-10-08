@@ -1,0 +1,565 @@
+---
+title: "Indicador 9: Monitorización de la Nutrición Enteral"
+author: "Carmen Macías Portillo"
+date: "`r Sys.Date()`"
+output: 
+  prettydoc::html_pretty:
+    theme: tactile
+    toc: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+```{r}
+# Cargamos la librería 'haven', necesaria para cargar archivos .sav (SPSS)
+library(haven)
+# Cargamos el archivo .sav
+enpic <- read_sav("ENPIC_BMI_525.sav")
+```
+
+## **Indicador de Calidad 9** (**IQ9**): Monitorización de la nutrición enteral
+
+El IQ9 evalúa la correcta monitorización de los pacientes que reciben nutrición enteral (NE). Se trata de un indicador de proceso especialmente exigente, cuyo objetivo es comprobar que el seguimiento del soporte enteral queda documentado de forma completa en distintos planos: control diario del aporte administrado, vigilancia hidroelectrolítica, monitorización analítica, detección de complicaciones digestivas y registro de incidencias relacionadas con la tolerancia a la nutrición enteral.
+
+En la base ENPIC, este indicador se ha operativizado como una auditoría documental de los componentes disponibles en el registro. Por tanto, el resultado debe interpretarse como una medida de trazabilidad del seguimiento de la NE en la base de datos, y no necesariamente como una medición directa de toda la vigilancia clínica realizada a pie de cama.
+
+Para evaluar la monitorización de la nutrición enteral, el indicador se ha operativizado bajo los siguientes criterios técnicos:
+
+- **Población diana** ($N$): Pacientes con inicio documentado de nutrición enteral y duración de NE de al menos 7 días completos (`TOTALNE2 >= 7`). Esta restricción del denominador constituye una adaptación metodológica necesaria, ya que varios de los componentes evaluados —especialmente la analítica del séptimo día— solo son exigibles en pacientes que mantienen la nutrición enteral durante un periodo suficiente para poder ser monitorizados semanalmente. De este modo, se evita clasificar como incumplimiento la ausencia de controles que no eran temporalmente aplicables.
+
+- **Casos favorables** ($n$): El numerador se definió como el número de pacientes con registro completo en todos los bloques de monitorización evaluables en la base ENPIC. Estos bloques fueron: aporte calórico diario durante los primeros siete días (`CALORIA1` a `CALORIA7`), ionograma basal del primer día (`POTASIO1`, `SODIO1`, `CALCIO1`, `MAGNESIO1`, `FOSFORO1`), perfil nutricional y hepático del séptimo día (`TRIGLI7`, `COLESTER7`, `ALBUMIN7`, `GOT7`, `GPT7`, `FALCALI7`, `GAMGT7`, `FILIRUB7`), control general de complicaciones (`VCOMPLIG`) y registro de complicaciones digestivas seleccionadas (`PVRGM100`, `PDANE`, `PVOMITO`).
+
+El cumplimiento del indicador se definió mediante una regla estricta de cumplimiento integral o “todo o nada”. Para que un paciente fuera considerado correctamente monitorizado, debía presentar información completa en todos los bloques evaluados. La ausencia de un único dato en cualquiera de estos componentes fue suficiente para clasificar el caso como no cumplidor del indicador.
+
+La proporción de cumplimiento se calculó como el cociente entre pacientes con monitorización completa y pacientes con nutrición enteral durante al menos 7 días.
+
+$$IQ9 = \left( \frac{\text{Nº de pacientes con NE correctamente monitorizados}}{\text{Nº de pacientes con NE durante al menos 7 días}} \right) \times 100$$
+
+Para cuantificar la precisión de la estimación se calculó el intervalo de confianza binomial al 95%.
+
+```{r}
+# 1. Definir el denominador
+# Filtrar pacientes que tuvieron NE y que estuvieron al menos 7 días con ella (para poder exigir la analítica de los 7 días)
+pacientes_NE_7d <- subset(enpic, !is.na(Inicio_NE) & TOTALNE2 >= 7)
+Denominador_IQ9 <- nrow(pacientes_NE_7d)
+
+# 2. Definir los bloques de variables para el numerador
+# Agrupar los nombres exactos de las columnas en listas para no hacer un código infinito
+# Bloque A: Control calórico diario (Días 1 al 7)
+cals_diarias <- c("CALORIA1", "CALORIA2", "CALORIA3", "CALORIA4", "CALORIA5", "CALORIA6", "CALORIA7")
+
+# Bloque B: Ionograma al ingreso (Día 1)
+cols_iones_D1 <- c("POTASIO1", "SODIO1", "CALCIO1", "MAGNESIO1", "FOSFORO1")
+
+# Bloque C: Perfil nutricional y hepático (Día 7)
+cols_analitica_D7 <- c("TRIGLI7", "COLESTER7", "ALBUMIN7", "GOT7", "GPT7", "FALCALI7", "GAMGT7", "FILIRUB7")
+
+# Bloque D: Control de complicaciones generales
+cols_control <- c("VCOMPLIG")
+
+# Bloque E: Identificación de complicaciones digestivas
+cols_dgi <- c("PVRGM100", "PDANE", "PVOMITO")
+
+# 3. Realizar las comprobaciones
+pacientes_NE_7d$Check_Diario <- rowSums(is.na(pacientes_NE_7d[cals_diarias])) == 0
+pacientes_NE_7d$Check_Iones <- rowSums(is.na(pacientes_NE_7d[cols_iones_D1])) == 0
+pacientes_NE_7d$Check_Dia7 <- rowSums(is.na(pacientes_NE_7d[cols_analitica_D7])) == 0
+pacientes_NE_7d$Check_Control <- rowSums(is.na(pacientes_NE_7d[cols_control])) == 0
+pacientes_NE_7d$Check_DGI <- rowSums(is.na(pacientes_NE_7d[cols_dgi])) == 0
+
+# 4. Calcular el numerador final (se deben cumplir TODOS los checks)
+pacientes_NE_7d$Exito_IQ9 <- pacientes_NE_7d$Check_Diario & pacientes_NE_7d$Check_Iones & pacientes_NE_7d$Check_Dia7 & pacientes_NE_7d$Check_Control & pacientes_NE_7d$Check_DGI
+
+Numerador_IQ9 <- sum(pacientes_NE_7d$Exito_IQ9, na.rm = TRUE)
+
+# 5. Cálculos estadísticos
+IQ9 <- (Numerador_IQ9 / Denominador_IQ9) * 100
+
+test_iq9 <- prop.test(Numerador_IQ9, Denominador_IQ9, conf.level = 0.95)
+IC_Inf_IQ9 <- round(test_iq9$conf.int[1] * 100, 2)
+IC_Sup_IQ9 <- round(test_iq9$conf.int[2] * 100, 2)
+
+# 6. Imprimir los resultados
+print(paste("Número de pacientes ingresados con NE y correctamente monitorizados:", Numerador_IQ9)); print(paste("Número de pacientes ingresados con NE:", Denominador_IQ9)); print(paste("El", round(IQ9, 2), "% de los pacientes ingresados con NE estuvieron correctamente monitorizados, con un intervalo de confianza al 95% de [", IC_Inf_IQ9, "% -", IC_Sup_IQ9, "%]"))
+
+# 7. Gráfico
+library(ggplot2)
+
+# Preparar datos para el gráfico
+df_grafico_iq9 <- data.frame(Indicador = "Cumplimiento IQ9", Porcentaje = IQ9, IC_inf = IC_Inf_IQ9, IC_sup = IC_Sup_IQ9, n = Numerador_IQ9, N = Denominador_IQ9)
+
+# Generar el gráfico
+ggplot(df_grafico_iq9, aes(x = Indicador, y = Porcentaje)) + geom_col(width = 0.35, fill = "#4C78A8") + geom_errorbar(aes(ymin = IC_inf, ymax = IC_sup), width = 0.08, linewidth = 0.9) + geom_hline(yintercept = 100, linetype = "dashed", color = "red", linewidth = 1) + geom_text(aes(y = IC_sup, label = paste0("n = ", n, " pcts. (", round(Porcentaje, 1), "%)\nIC95%: [", round(IC_inf, 1), " - ", round(IC_sup, 1), "]")), vjust = -0.5, size = 5, lineheight = 0.9) + annotate("text", x = 1, y = 103, label = "Estándar = 100%", color = "red", size = 5) + scale_y_continuous(limits = c(0, 115), breaks = seq(0, 100, by = 20)) + labs(title = "Indicador de Calidad 9 (IQ9)", subtitle = "Monitorización de la nutrición enteral", x = NULL, y = "Cumplimiento (%)") + theme_minimal(base_size = 13) + theme(plot.title = element_text(face = "bold"), axis.text.x = element_text(face = "bold"))
+```
+
+El IQ9 alcanzó una tasa de cumplimiento del **`r round(IQ9, 2)`%** (**`r Numerador_IQ9`/ `r Denominador_IQ9`**; IC95%: **`r IC_Inf_IQ9`-`r IC_Sup_IQ9`%**), situándose muy por debajo del estándar teórico del 100%. Por tanto, la mayoría de los pacientes evaluables no presentó un registro completo de todos los componentes exigidos para considerar correcta la monitorización documental de la nutrición enteral.
+
+Este resultado debe interpretarse con cautela, ya que el incumplimiento del indicador no implica necesariamente ausencia de vigilancia clínica, sino falta de constancia completa en la base de datos. Al tratarse de un indicador compuesto y muy estricto, la ausencia de un único dato analítico, nutricional o digestivo basta para clasificar al paciente como no correctamente monitorizado.
+
+### **Análisis de fallos por bloques**
+
+Para identificar el origen del bajo cumplimiento global del IQ9, se realizó un análisis descriptivo de los fallos por bloque de monitorización. Este análisis invierte la lógica del indicador principal: en lugar de cuantificar los pacientes que cumplen simultáneamente todos los criterios, estima cuántos pacientes presentan al menos un dato ausente en cada bloque evaluado.
+
+Cada bloque se consideró fallido cuando el correspondiente indicador lógico (`Check_Diario`, `Check_Iones`, `Check_Dia7`, `Check_Control` o `Check_DGI`) fue igual a `FALSE`. Las frecuencias absolutas se calcularon sobre el denominador del IQ9, constituido por los 297 pacientes con nutrición enteral durante al menos 7 días. Posteriormente, se estimó el porcentaje de fallo de cada bloque sobre el total de pacientes evaluables.
+
+```{r}
+library(dplyr); library(tidyr); library(ggplot2)
+
+# 1. Desglose de fallos por bloque
+desglose_fallos_iq9 <- pacientes_NE_7d %>%
+  summarise(Fallo_Aporte_Diario = sum(!Check_Diario, na.rm = TRUE), Fallo_Iones_Basales = sum(!Check_Iones, na.rm = TRUE), Fallo_Analitica_Dia7 = sum(!Check_Dia7, na.rm = TRUE), Fallo_Control_Complicaciones = sum(!Check_Control, na.rm = TRUE), Fallo_Vigilancia_DGI = sum(!Check_DGI, na.rm = TRUE), Total_Evaluados = n()) %>%
+  pivot_longer(cols = starts_with("Fallo_"), names_to = "Bloque_Suspendido", values_to = "Pacientes_con_Fallo") %>%
+  mutate(Porcentaje_Fallo = round((Pacientes_con_Fallo / Total_Evaluados) * 100, 1), Etiqueta = paste0("n = ", Pacientes_con_Fallo, " pcts. (", Porcentaje_Fallo, "%)"), Bloque_Suspendido = case_when(Bloque_Suspendido == "Fallo_Aporte_Diario" ~ "Bloque A: Aporte Calórico Diario (Días 1 a 7)", Bloque_Suspendido == "Fallo_Iones_Basales" ~ "Bloque B: Ionograma al Ingreso (Día 1)", Bloque_Suspendido == "Fallo_Analitica_Dia7" ~ "Bloque C: Analítica Completa (Día 7)", Bloque_Suspendido == "Fallo_Control_Complicaciones" ~ "Bloque D: Control de Complicaciones (VCOMPLIG)", Bloque_Suspendido == "Fallo_Vigilancia_DGI" ~ "Bloque E: Vigilancia Digestiva (Vómitos, DANE, Residuo)")) %>%
+  arrange(desc(Pacientes_con_Fallo))
+
+# 2. Gráfico de fallos por bloque
+grafico_bloques <- ggplot(desglose_fallos_iq9,
+  aes(x = reorder(Bloque_Suspendido, Porcentaje_Fallo), y = Porcentaje_Fallo, fill = Bloque_Suspendido)) +
+  geom_col(show.legend = FALSE, alpha = 0.85) +
+  coord_flip(clip = "off") +
+  geom_text(aes(label = Etiqueta), hjust = -0.08, size = 4.3, fontface = "bold", color = "#333333") +
+  scale_fill_manual(values = c("Bloque C: Analítica Completa (Día 7)" = "#d73027", "Bloque B: Ionograma al Ingreso (Día 1)" = "#f46d43", "Bloque A: Aporte Calórico Diario (Días 1 a 7)" = "#fee090", "Bloque E: Vigilancia Digestiva (Vómitos, DANE, Residuo)" = "#4575b4", "Bloque D: Control de Complicaciones (VCOMPLIG)" = "#91bfdb")) +
+  # CAMBIO 1: Límites hasta 100 y mayor expansión (de 0.15 a 0.25)
+  scale_y_continuous(limits = c(0, 100), expand = expansion(mult = c(0, 0.25))) +
+  labs(title = "Radiografía de los fallos de monitorización (IQ9)", subtitle = paste0("Pacientes con fallo en cada bloque clínico (n = ", Denominador_IQ9, ")"), x = NULL, y = "Porcentaje de omisión / fallo (%)") + theme_minimal(base_size = 14) +
+  theme( plot.title.position = "plot", plot.title = element_text(face = "bold"), plot.margin = margin(10, 90, 10, 10), panel.grid.major.y = element_blank())
+
+print(grafico_bloques)
+```
+
+El análisis por bloques muestra que el incumplimiento del IQ9 no se distribuye de forma homogénea entre los distintos componentes del indicador. El mayor porcentaje de fallo se concentra en el **Bloque C**: **Analítica completa del día 7**, con **194 pacientes** afectados (**65,3%**), seguido del **Bloque B**: **Ionograma basal del día 1**, con **164 pacientes** (**55,2%**).
+
+Por el contrario, el **Bloque A**: **Aporte calórico diario** presenta una proporción de omisión muy baja, limitada a **11 pacientes** (**3,7%**). Los bloques correspondientes al **control general de complicaciones** y a la **vigilancia digestiva registrada** no presentan fallos documentales en la cohorte evaluable (**0 pacientes**; **0%**).
+
+Desde un punto de vista estadístico, el patrón observado indica que el fallo global del IQ9 está determinado fundamentalmente por componentes analíticos. Dado que el indicador aplica una regla de cumplimiento integral, la elevada frecuencia de omisión en los bloques B y C tiene un efecto desproporcionado sobre el resultado final, reduciendo de forma marcada la probabilidad de cumplimiento completo del indicador.
+
+#### **Análisis de omisiones por parámetros clínico individual**
+
+Con el objetivo de aumentar la resolución del análisis, se realizó un segundo desglose a nivel de variable individual. Para ello, se calcularon los valores ausentes en cada uno de los parámetros incluidos en el checklist operativo del IQ9: aportes calóricos diarios, electrolitos basales, perfil nutricional y hepático del séptimo día, control de complicaciones y variables de vigilancia digestiva.
+
+El análisis se restringió gráficamente a los parámetros con al menos un valor ausente, con el fin de evitar la representación de variables sin omisiones y mejorar la legibilidad del gráfico. Para cada parámetro se representó la frecuencia absoluta de omisión y su porcentaje sobre el denominador del IQ9.
+
+```{r}
+# 1. Unir todas las variables del checklist operativo del IQ9
+todas_las_variables <- c(cals_diarias, cols_iones_D1, cols_analitica_D7, cols_control, cols_dgi)
+
+# 2. Calcular omisiones por variable individual
+desglose_elementos <- pacientes_NE_7d %>% select(all_of(todas_las_variables)) %>% summarise(across(everything(), ~sum(is.na(.)), .names = "{.col}")) %>% pivot_longer(cols = everything(), names_to = "Elemento_Clinico", values_to = "Pacientes_con_Fallo") %>% mutate(Porcentaje_Fallo = round((Pacientes_con_Fallo / Denominador_IQ9) * 100, 2), Porcentaje_Grafico = round(Porcentaje_Fallo, 1), Etiqueta = paste0("n = ", Pacientes_con_Fallo, " pcts. (", Porcentaje_Grafico, "%)"), Bloque_Origen = case_when(Elemento_Clinico %in% cals_diarias ~ "Bloque A: Aporte Diario", Elemento_Clinico %in% cols_iones_D1 ~ "Bloque B: Iones Basales (Día 1)", Elemento_Clinico %in% cols_analitica_D7 ~ "Bloque C: Analítica Completa (Día 7)", Elemento_Clinico %in% cols_control ~ "Bloque D: Control de Complicaciones", Elemento_Clinico %in% cols_dgi ~ "Bloque E: Vigilancia Digestiva")) %>% arrange(desc(Pacientes_con_Fallo))
+
+# 3. Filtrar variables con al menos una omisión para el gráfico
+datos_grafico_micro <- desglose_elementos %>% filter(Pacientes_con_Fallo > 0)
+
+# 4. Gráfico de omisiones por parámetro clínico
+grafico_elementos <- ggplot(datos_grafico_micro, aes(x = reorder(Elemento_Clinico, Porcentaje_Fallo), y = Porcentaje_Fallo, fill = Bloque_Origen)) + geom_col(alpha = 0.9) + coord_flip(clip = "off") + geom_text(aes(label = Etiqueta), hjust = -0.06, size = 3.4, color = "#333333") + scale_y_continuous(limits = c(0, 75), expand = expansion(mult = c(0, 0.20))) + scale_fill_manual(values = c("Bloque C: Analítica Completa (Día 7)" = "#d73027", "Bloque B: Iones Basales (Día 1)" = "#f46d43", "Bloque A: Aporte Diario" = "#fee090")) + labs(title = "Auditoría microscópica: omisiones por parámetro clínico", subtitle = "Frecuencia absoluta y porcentaje de omisión individual; se excluyen parámetros con 0% de fallo", x = NULL, y = "Porcentaje de omisión (%)", fill = "Bloque de origen") + theme_minimal(base_size = 9) + theme(plot.title.position = "plot", plot.title = element_text(face = "bold"), plot.margin = margin(10, 45, 10, 10), panel.grid.major.y = element_blank(), legend.position = "bottom")
+
+print(grafico_elementos)
+```
+
+El desglose por parámetro confirma que las omisiones se concentran en variables analíticas específicas. En el bloque del día 7, las mayores tasas de ausencia corresponden a **COLESTER7**, con **170 pacientes** sin registro (**57,2%**), y **TRIGLI7**, con **166 pacientes** (**55,9%**). También destacan **FALCALI7** (**106 pacientes**; **35,7%**), **ALBUMIN7** (**92 pacientes**; **31,0%**), **GAMGT7** (**90 pacientes**; **30,3%**), **GOT7** (**87 pacientes**; **29,3%**), **GPT7** (**70 pacientes**; **23,6%**) y **FILIRUB7** (**53 pacientes**; **17,8%**).
+
+En el bloque de ionograma basal, las principales omisiones afectan a **FOSFORO1** (**128 pacientes**; **43,1%**), **MAGNESIO1** (**120 pacientes**; **40,4%**) y **CALCIO1** (**101 pacientes**; **34,0%**). En cambio, **POTASIO1** presenta una omisión marginal (**6 pacientes**; **2,0%**) y **SODIO1** no aparece en el gráfico al no registrar omisiones.
+
+El bloque de aporte calórico diario muestra una pérdida de información limitada y de baja magnitud relativa. Las omisiones se concentran en los días finales del periodo de observación: **CALORIA7** presenta **11 pacientes** con dato ausente (**3,7%**), seguida de **CALORIA6** (**7 pacientes**; **2,4%**) y **CALORIA5** (**6 pacientes**; **2,0%**). Los días iniciales presentan omisiones mínimas o nulas.
+
+En conjunto, el análisis microscópico reproduce el patrón observado en el análisis por bloques: el fallo del IQ9 está impulsado principalmente por la ausencia de determinaciones analíticas concretas, especialmente perfil lipídico, perfil hepático y electrolitos vinculados a la monitorización metabólica inicial. La baja proporción de omisiones en los registros de aporte y la ausencia de fallos en las variables digestivas evaluadas indican que el incumplimiento global del indicador deriva de forma predominante de déficits de completitud analítica, no de una pérdida uniforme de información en todos los dominios de monitorización.
+
+### **Análisis univariante**
+
+Se realizó un análisis univariante exploratorio tomando como variable dependiente el **cumplimiento documental global del IQ9**, dicotomizado en **“Cumple IQ9”** frente a **“No cumple IQ9”**.
+
+- Las variables continuas con distribución aproximadamente normal se expresaron como *media ± desviación estándar* y se compararon mediante **t-test**.
+
+- Las variables continuas asimétricas se resumieron como *mediana [Q1-Q3]* y se compararon mediante **U de Mann-Whitney**.
+
+- Las variables categóricas se expresaron como **n (%)** y se contrastaron mediante **chi-cuadrado** o **test exacto de Fisher** cuando existieron frecuencias bajas.
+
+Los valores de *p* ≤ 0,05 se consideraron estadísticamente significativos y los valores entre 0,05 y 0,10 se interpretaron como **tendencia estadística**. El análisis incluyó **60 pacientes con cumplimiento completo del IQ9 (20,2%)** y **237 pacientes sin cumplimiento completo (79,8%)**.
+
+```{r}
+library(dplyr); library(tidyr); library(knitr); library(kableExtra)
+
+# 0. Crear variable de grupo para el análisis univariante IQ9
+pacientes_NE_7d <- pacientes_NE_7d %>% mutate(Grupo_IQ9 = factor(case_when(Exito_IQ9 == TRUE ~ "Cumple IQ9", Exito_IQ9 == FALSE ~ "No cumple IQ9", TRUE ~ NA_character_), levels = c("Cumple IQ9", "No cumple IQ9")))
+
+# 1. Añadir n y % de cada grupo al encabezado de la tabla
+n_grupos_iq9 <- pacientes_NE_7d %>% filter(!is.na(Grupo_IQ9)) %>% count(Grupo_IQ9) %>% mutate(pct = n / sum(n) * 100, encabezado = paste0(as.character(Grupo_IQ9), " (n = ", n, "; ", sprintf("%.1f", pct), "%)"))
+col_cumple_iq9 <- n_grupos_iq9$encabezado[n_grupos_iq9$Grupo_IQ9 == "Cumple IQ9"]; col_nocumple_iq9 <- n_grupos_iq9$encabezado[n_grupos_iq9$Grupo_IQ9 == "No cumple IQ9"]
+
+# 2. Función para formatear p-valores
+formatear_p <- function(p) ifelse(is.na(p), "-", ifelse(p < 0.001, "<0.001", sprintf("%.3f", p)))
+
+# 3. Función para asegurar columnas
+asegurar_columnas_iq9 <- function(tabla) { if (!"Cumple IQ9" %in% names(tabla)) tabla[["Cumple IQ9"]] <- "-"; if (!"No cumple IQ9" %in% names(tabla)) tabla[["No cumple IQ9"]] <- "-"; tabla %>% select(Variable, `Cumple IQ9`, `No cumple IQ9`, p) }
+
+# 4. Funciones para variables continuas
+# 4.1. Variables asimétricas: Mediana [Q1-Q3] + Mann-Whitney
+crear_fila_mw_iq9 <- function(data, var, nom, bloque) { d <- data %>% filter(!is.na(.data[[var]]), !is.na(Grupo_IQ9)); p <- if(n_distinct(d$Grupo_IQ9) < 2) NA_real_ else wilcox.test(as.formula(paste(var, "~ Grupo_IQ9")), data = d)$p.value; t <- d %>% group_by(Grupo_IQ9) %>% summarise(v = sprintf("%.1f [%.1f - %.1f]", median(.data[[var]], na.rm = TRUE), quantile(.data[[var]], 0.25, na.rm = TRUE), quantile(.data[[var]], 0.75, na.rm = TRUE)), .groups = "drop") %>% pivot_wider(names_from = Grupo_IQ9, values_from = v) %>% mutate(Bloque = bloque, Variable = nom, p = formatear_p(p)); asegurar_columnas_iq9(t %>% select(Bloque, Variable, everything())) %>% mutate(Bloque = bloque) %>% select(Bloque, everything()) }
+
+# 4.2. Variables normales: Media ± DE + t-test
+crear_fila_ttest_iq9 <- function(data, var, nom, bloque) { d <- data %>% filter(!is.na(.data[[var]]), !is.na(Grupo_IQ9)); p <- if(n_distinct(d$Grupo_IQ9) < 2) NA_real_ else t.test(as.formula(paste(var, "~ Grupo_IQ9")), data = d)$p.value; t <- d %>% group_by(Grupo_IQ9) %>% summarise(v = sprintf("%.1f ± %.1f", mean(.data[[var]], na.rm = TRUE), sd(.data[[var]], na.rm = TRUE)), .groups = "drop") %>% pivot_wider(names_from = Grupo_IQ9, values_from = v) %>% mutate(Bloque = bloque, Variable = nom, p = formatear_p(p)); asegurar_columnas_iq9(t %>% select(Bloque, Variable, everything())) %>% mutate(Bloque = bloque) %>% select(Bloque, everything()) }
+
+# 5. Funciones para variables categóricas
+# 5.1. Variables categóricas con varias categorías
+crear_fila_chi_iq9 <- function(data, var, nom, niveles, etiquetas, bloque) { d <- data %>% filter(!is.na(.data[[var]]), !is.na(Grupo_IQ9)) %>% mutate(vc = factor(.data[[var]], levels = niveles, labels = etiquetas)) %>% filter(!is.na(vc)); tabla_test <- table(d$vc, d$Grupo_IQ9); p <- if (any(tabla_test < 5)) fisher.test(tabla_test)$p.value else chisq.test(tabla_test)$p.value; t <- d %>% count(Grupo_IQ9, vc) %>% complete(Grupo_IQ9, vc, fill = list(n = 0)) %>% group_by(Grupo_IQ9) %>% mutate(total_grupo = sum(n), v = sprintf("%d (%.1f%%)", n, ifelse(total_grupo > 0, n / total_grupo * 100, 0))) %>% ungroup() %>% select(Grupo_IQ9, vc, v) %>% pivot_wider(names_from = Grupo_IQ9, values_from = v) %>% mutate(Bloque = bloque, Variable = paste0(nom, ": ", vc), p = ifelse(row_number() == 1, formatear_p(p), "")); asegurar_columnas_iq9(t %>% select(Bloque, Variable, everything())) %>% mutate(Bloque = bloque) %>% select(Bloque, everything()) }
+
+# 5.2. Variables categóricas Sí/No mostrando solo la categoría "Sí"
+crear_fila_chi_si_iq9 <- function(data, var, nom, niveles, etiquetas, bloque, categoria_mostrar = "Sí") { d <- data %>% filter(!is.na(.data[[var]]), !is.na(Grupo_IQ9)) %>% mutate(vc = factor(.data[[var]], levels = niveles, labels = etiquetas)) %>% filter(!is.na(vc)); tabla_test <- table(d$vc, d$Grupo_IQ9); p <- if (any(tabla_test < 5)) fisher.test(tabla_test)$p.value else chisq.test(tabla_test)$p.value; t <- d %>% count(Grupo_IQ9, vc) %>% complete(Grupo_IQ9, vc, fill = list(n = 0)) %>% group_by(Grupo_IQ9) %>% mutate(total_grupo = sum(n), v = sprintf("%d (%.1f%%)", n, ifelse(total_grupo > 0, n / total_grupo * 100, 0))) %>% ungroup() %>% filter(vc == categoria_mostrar) %>% select(Grupo_IQ9, v) %>% pivot_wider(names_from = Grupo_IQ9, values_from = v) %>% mutate(Bloque = bloque, Variable = paste0(nom, ": ", categoria_mostrar), p = formatear_p(p)); asegurar_columnas_iq9(t %>% select(Bloque, Variable, everything())) %>% mutate(Bloque = bloque) %>% select(Bloque, everything()) }
+
+# 6. Crear variable derivada: Tipo de soporte nutricional
+pacientes_NE_7d <- pacientes_NE_7d %>% mutate(TIPO_SN_IQ9 = factor(case_when(TIPO_SN_Grupo == 1 ~ "NE exclusiva", TIPO_SN_Grupo %in% c(2, 3, 4) ~ "Con NPT", TRUE ~ NA_character_), levels = c("NE exclusiva", "Con NPT")))
+
+# 7. Generar tabla final univariante IQ9
+tabla_univariante_iq9 <- bind_rows(
+  # Características basales y gravedad
+  crear_fila_mw_iq9(pacientes_NE_7d, "EDAD", "Edad, años", "Características basales y gravedad"), crear_fila_mw_iq9(pacientes_NE_7d, "BMI", "BMI, kg/m²", "Características basales y gravedad"), crear_fila_ttest_iq9(pacientes_NE_7d, "APACHEII", "APACHE II", "Características basales y gravedad"), crear_fila_ttest_iq9(pacientes_NE_7d, "SAPSII", "SAPS II", "Características basales y gravedad"), crear_fila_mw_iq9(pacientes_NE_7d, "SOFA1", "SOFA admisión", "Características basales y gravedad"), crear_fila_mw_iq9(pacientes_NE_7d, "NUTRIC_Score", "NUTRIC Score", "Características basales y gravedad"), crear_fila_chi_iq9(pacientes_NE_7d, "SEXO", "Sexo", niveles = c(1, 2), etiquetas = c("Hombre", "Mujer"), bloque = "Características basales y gravedad"), crear_fila_chi_iq9(pacientes_NE_7d, "STATUS3", "Tipo de paciente", niveles = c(0, 1, 2), etiquetas = c("Quirúrgico", "Médico", "Trauma"), bloque = "Características basales y gravedad"), crear_fila_chi_si_iq9(pacientes_NE_7d, "VGSING2", "Paciente con desnutrición según VGS", niveles = c(1, 2), etiquetas = c("No", "Sí"), bloque = "Características basales y gravedad"), crear_fila_chi_si_iq9(pacientes_NE_7d, "NUTRISCOR2", "Paciente con riesgo nutricional según NUTRIC", niveles = c(0, 1), etiquetas = c("No", "Sí"), bloque = "Características basales y gravedad"),
+  # Antecedentes clínicos
+  crear_fila_chi_si_iq9(pacientes_NE_7d, "AHTA", "Antecedentes hipertensión", niveles = c(0, 1), etiquetas = c("No", "Sí"), bloque = "Antecedentes clínicos"), crear_fila_chi_si_iq9(pacientes_NE_7d, "ADBTM", "Antecedentes diabetes mellitus", niveles = c(0, 1), etiquetas = c("No", "Sí"), bloque = "Antecedentes clínicos"), crear_fila_chi_si_iq9(pacientes_NE_7d, "AEPOC", "Antecedentes EPOC", niveles = c(0, 1), etiquetas = c("No", "Sí"), bloque = "Antecedentes clínicos"), crear_fila_chi_si_iq9(pacientes_NE_7d, "ACARDIOP", "Antecedentes cardiopatía/IAM", niveles = c(0, 1), etiquetas = c("No", "Sí"), bloque = "Antecedentes clínicos"), crear_fila_chi_si_iq9(pacientes_NE_7d, "ACIRROSIS", "Enfermedad hepática crónica", niveles = c(0, 1), etiquetas = c("No", "Sí"), bloque = "Antecedentes clínicos"), crear_fila_chi_si_iq9(pacientes_NE_7d, "AIRC", "Insuficiencia renal crónica", niveles = c(0, 1), etiquetas = c("No", "Sí"), bloque = "Antecedentes clínicos"), crear_fila_chi_si_iq9(pacientes_NE_7d, "AINMUNO", "Inmunosupresión", niveles = c(0, 1), etiquetas = c("No", "Sí"), bloque = "Antecedentes clínicos"), crear_fila_chi_si_iq9(pacientes_NE_7d, "ANEOPLAS", "Neoplasia", niveles = c(0, 1), etiquetas = c("No", "Sí"), bloque = "Antecedentes clínicos"),
+  # Soporte nutricional
+  crear_fila_chi_iq9(pacientes_NE_7d, "TIPO_SN_IQ9", "Tipo de soporte nutricional", niveles = c("NE exclusiva", "Con NPT"), etiquetas = c("NE exclusiva", "Con NPT"), bloque = "Soporte nutricional"), crear_fila_chi_si_iq9(pacientes_NE_7d, "SN_Menos48h", "Inicio de soporte nutricional <48 h", niveles = c(0, 1), etiquetas = c("No", "Sí"), bloque = "Soporte nutricional"), crear_fila_mw_iq9(pacientes_NE_7d, "HORASIN", "Horas hasta inicio del soporte nutricional", "Soporte nutricional"), crear_fila_mw_iq9(pacientes_NE_7d, "TOTALNE2", "Días de nutrición enteral", "Soporte nutricional"), crear_fila_mw_iq9(pacientes_NE_7d, "TOTAL_DIAS_SN", "Días totales de soporte nutricional", "Soporte nutricional"), crear_fila_ttest_iq9(pacientes_NE_7d, "Kcal_14d", "Media kcal/kg/día", "Soporte nutricional"), crear_fila_ttest_iq9(pacientes_NE_7d, "gPROT_14d", "Media g proteína/kg/día", "Soporte nutricional"),
+  # Complicaciones digestivas
+  crear_fila_chi_si_iq9(pacientes_NE_7d, "ANY_COMPLICATION", "Cualquier complicación", niveles = c(0, 1), etiquetas = c("No", "Sí"), bloque = "Complicaciones digestivas"), crear_fila_chi_si_iq9(pacientes_NE_7d, "PVRGM100", "Residuo gástrico elevado >500 mL", niveles = c(0, 1), etiquetas = c("No", "Sí"), bloque = "Complicaciones digestivas"), crear_fila_chi_si_iq9(pacientes_NE_7d, "PDANE", "Diarrea asociada a NE", niveles = c(0, 1), etiquetas = c("No", "Sí"), bloque = "Complicaciones digestivas"), crear_fila_chi_si_iq9(pacientes_NE_7d, "PVOMITO", "Vómitos", niveles = c(0, 1), etiquetas = c("No", "Sí"), bloque = "Complicaciones digestivas"), crear_fila_chi_si_iq9(pacientes_NE_7d, "PBRONCOAS", "Broncoaspiración", niveles = c(0, 1), etiquetas = c("No", "Sí"), bloque = "Complicaciones digestivas"), crear_fila_chi_si_iq9(pacientes_NE_7d, "PISQUINT", "Isquemia intestinal", niveles = c(0, 1), etiquetas = c("No", "Sí"), bloque = "Complicaciones digestivas"),
+  # Complejidad clínica y evolución
+  crear_fila_chi_si_iq9(pacientes_NE_7d, "VM", "Ventilación mecánica", niveles = c(0, 1), etiquetas = c("No", "Sí"), bloque = "Complejidad clínica y evolución"), crear_fila_mw_iq9(pacientes_NE_7d, "DIASVM", "Días de ventilación mecánica", "Complejidad clínica y evolución"), crear_fila_chi_si_iq9(pacientes_NE_7d, "NEC_NA", "Necesidad de noradrenalina", niveles = c(0, 1), etiquetas = c("No", "Sí"), bloque = "Complejidad clínica y evolución"), crear_fila_chi_si_iq9(pacientes_NE_7d, "TRR", "Necesidad de TRR", niveles = c(0, 1), etiquetas = c("No", "Sí"), bloque = "Complejidad clínica y evolución"), crear_fila_chi_si_iq9(pacientes_NE_7d, "INFRESP", "Infección respiratoria", niveles = c(0, 1), etiquetas = c("No", "Sí"), bloque = "Complejidad clínica y evolución"), crear_fila_chi_si_iq9(pacientes_NE_7d, "INFVIA", "Infección relacionada con catéter", niveles = c(0, 1), etiquetas = c("No", "Sí"), bloque = "Complejidad clínica y evolución"), crear_fila_mw_iq9(pacientes_NE_7d, "DIAS_UCI", "Días en UCI", "Complejidad clínica y evolución"), crear_fila_mw_iq9(pacientes_NE_7d, "DIAS_HOSP", "Días de hospitalización", "Complejidad clínica y evolución"), crear_fila_chi_si_iq9(pacientes_NE_7d, "MUERTO28", "Mortalidad a 28 días", niveles = c(0, 1), etiquetas = c("No", "Sí"), bloque = "Complejidad clínica y evolución"))
+
+# 8. Dar el formato final a la tabla
+tabla_univariante_iq9[is.na(tabla_univariante_iq9)] <- "-"
+tabla_univariante_iq9_formateada <- tabla_univariante_iq9 %>% mutate(p_num = suppressWarnings(as.numeric(ifelse(p == "<0.001", "0.0009", p))), p = case_when(!is.na(p_num) & p_num <= 0.05 ~ paste0("<b><u>", p, "</u></b>"), !is.na(p_num) & p_num <= 0.10 ~ paste0("<b>", p, "</b>"), TRUE ~ p)) %>% select(-p_num) %>% rename(!!col_cumple_iq9 := `Cumple IQ9`, !!col_nocumple_iq9 := `No cumple IQ9`, `Valor p` = p)
+indices_bloques_iq9 <- tabla_univariante_iq9_formateada %>% count(Bloque) %>% tibble::deframe()
+
+# 9. Renderizar tabla estética
+tabla_univariante_iq9_formateada %>% select(-Bloque) %>% kable(format = "html", escape = FALSE, align = c("l", "c", "c", "c"), caption = "Características clínicas, nutricionales y evolutivas según cumplimiento documental del IQ9") %>% kable_styling(full_width = FALSE, bootstrap_options = c("striped", "hover", "condensed", "responsive"), font_size = 13) %>% column_spec(1, bold = FALSE, width = "28em") %>% column_spec(2, width = "13em") %>% column_spec(3, width = "13em") %>% column_spec(4, width = "7em") %>% pack_rows(index = indices_bloques_iq9, bold = TRUE, italic = FALSE, background = "#f2f2f2")
+```
+
+El grupo **“Cumple IQ9”** mostró un perfil clínico globalmente más complejo que el grupo **“No cumple IQ9”**. Presentó mayor edad —**66,0 [60,8-74,0] vs. 60,0 [49,0-72,0] años; p = 0,007**—, mayor SAPS II —**54,1 ± 15,9 vs. 48,9 ± 16,7; p = 0,031**— y mayor NUTRIC Score —**5,0 [3,0-6,0] vs. 4,0 [3,0-6,0]; p = 0,032**—, con tendencia a mayor proporción de pacientes con riesgo nutricional por NUTRIC —**56,9% vs. 43,8%; p = 0,100**—. También se observó mayor carga de comorbilidad en hipertensión —**55,0% vs. 37,6%; p = 0,021**—, diabetes —**33,3% vs. 19,8%; p = 0,039**—, cardiopatía/IAM —**23,3% vs. 11,4%; p = 0,029**— e inmunosupresión —**23,3% vs. 11,4%; p = 0,029**—, con tendencia en neoplasia —**26,7% vs. 15,6%; p = 0,070**—. Desde el punto de vista nutricional, el cumplimiento fue más frecuente en pacientes con soporte mixto con NPT —**36,7% vs. 17,7%; p = 0,003**—, menor demora hasta el inicio del soporte —**24,2 [12,4-35,2] vs. 29,0 [19,2-49,6] h; p = 0,018**— y mayor duración total del soporte nutricional —**22,0 [11,0-42,0] vs. 17,0 [10,0-27,0] días; p = 0,032**—. En la evolución, el grupo cumplidor presentó mayor estancia en UCI —**23,0 [15,0-39,2] vs. 20,0 [14,0-29,0] días; p = 0,043**— y hospitalaria —**39,5 [27,0-66,2] vs. 34,5 [21,0-54,0] días; p = 0,045**—, con tendencia a mayor necesidad de noradrenalina —**88,3% vs. 77,2%; p = 0,084**—. En conjunto, el patrón sugiere que el **cumplimiento documental completo del IQ9 se concentra en pacientes de mayor gravedad, mayor duración asistencial y mayor exposición al seguimiento clínico-analítico**, sin diferencias relevantes en complicaciones digestivas ni mortalidad a 28 días.
+
+### **Análisis multivariante**
+#### **Regresión logística binaria multivariable**
+
+El modelo logístico binario se construyó utilizando como desenlace el cumplimiento documental completo del IQ9. Se codificó el evento como "Cumple IQ9", de modo que los OR > 1 indican mayor probabilidad de cumplimiento completo.
+
+Como variables candidatas se incluyeron aquellas que mostraron asociación estadísticamente significativa o tendencia en el análisis univariante (*p < 0,10*). El NUTRIC Score no se incorporó al modelo multivariable para evitar colinealidad parcial con variables clínicas primarias, especialmente edad y gravedad, representadas en el modelo mediante `EDAD` y `SAPSII`.
+
+Se exploraron combinaciones de 2 a 6 variables, priorizando el equilibrio entre ajuste global (AIC), capacidad discriminativa (AUC) y parsimonia.
+
+```{r}
+library(dplyr); library(tidyr); library(broom); library(pROC); library(purrr); library(knitr); library(kableExtra)
+
+# Variable dependiente: cumplimiento documental completo del IQ9
+# 0 = No cumple IQ9 | 1 = Cumple IQ9
+
+# 1. Preparación de datos
+datos_modelos_iq9 <- pacientes_NE_7d %>% mutate(Grupo_IQ9_Modelo = factor(case_when(Exito_IQ9 == FALSE ~ "No cumple", Exito_IQ9 == TRUE ~ "Cumple", TRUE ~ NA_character_), levels = c("No cumple", "Cumple")), AHTA_iq9 = factor(case_when(AHTA == 0 ~ "No", AHTA == 1 ~ "Si", TRUE ~ NA_character_), levels = c("No", "Si")), ADBTM_iq9 = factor(case_when(ADBTM == 0 ~ "No", ADBTM == 1 ~ "Si", TRUE ~ NA_character_), levels = c("No", "Si")), ACARDIOP_iq9 = factor(case_when(ACARDIOP == 0 ~ "No", ACARDIOP == 1 ~ "Si", TRUE ~ NA_character_), levels = c("No", "Si")), AINMUNO_iq9 = factor(case_when(AINMUNO == 0 ~ "No", AINMUNO == 1 ~ "Si", TRUE ~ NA_character_), levels = c("No", "Si")), ANEOPLAS_iq9 = factor(case_when(ANEOPLAS == 0 ~ "No", ANEOPLAS == 1 ~ "Si", TRUE ~ NA_character_), levels = c("No", "Si")), NEC_NA_iq9 = factor(case_when(NEC_NA == 0 ~ "No", NEC_NA == 1 ~ "Si", TRUE ~ NA_character_), levels = c("No", "Si")), TIPO_SN_IQ9 = factor(case_when(TIPO_SN_Grupo == 1 ~ "NE exclusiva", TIPO_SN_Grupo %in% c(2, 3, 4) ~ "Con NPT", TRUE ~ NA_character_), levels = c("NE exclusiva", "Con NPT"))) %>% drop_na(Grupo_IQ9_Modelo)
+
+# 2. Variables candidatas: Incluye variables con significación estadística o tendencia en el univariante IQ9
+variables_candidatas_iq9 <- c("EDAD", "SAPSII", "AHTA_iq9", "ADBTM_iq9", "ACARDIOP_iq9", "AINMUNO_iq9", "ANEOPLAS_iq9", "TIPO_SN_IQ9", "HORASIN", "TOTAL_DIAS_SN", "NEC_NA_iq9", "DIAS_UCI", "DIAS_HOSP")
+
+# 3. Función para evaluar modelos logísticos binarios
+evaluar_modelo_iq9 <- function(vars, data) {
+  tryCatch({
+    d_mod <- data %>% select(all_of(c("Grupo_IQ9_Modelo", vars))) %>% drop_na()
+    # Criterios mínimos de estabilidad
+    if (nrow(d_mod) < 80 || length(unique(d_mod$Grupo_IQ9_Modelo)) < 2) return(NULL)
+    # Evitar modelos con muy pocos eventos
+    eventos <- sum(d_mod$Grupo_IQ9_Modelo == "Cumple")
+    if (eventos < 20) return(NULL)
+    # Ajuste del modelo
+    mod <- glm(as.formula(paste("Grupo_IQ9_Modelo ~", paste(vars, collapse = " + "))), data = d_mod, family = binomial)
+    # Coeficientes
+    p_vals <- tidy(mod) %>% filter(term != "(Intercept)")
+    # Curva ROC
+    roc_obj <- roc(response = d_mod$Grupo_IQ9_Modelo, predictor = predict(mod, type = "response"), levels = c("No cumple", "Cumple"), direction = "<", quiet = TRUE)
+    data.frame(Variables = paste(vars, collapse = " + "), Num_variables = length(vars), N_modelo = nrow(d_mod), Eventos = eventos, AIC = AIC(mod), AUC = as.numeric(auc(roc_obj)), N_significativas = sum(p_vals$p.value <= 0.05, na.rm = TRUE), N_tendencia = sum(p_vals$p.value <= 0.10, na.rm = TRUE))
+  }, error = function(e) NULL)
+}
+
+# 4. Combinaciones de variables: Se exploran modelos de 2 a 6 variables para evitar sobreajuste
+combinaciones_iq9 <- unlist(lapply(2:min(6, length(variables_candidatas_iq9)), function(k) combn(variables_candidatas_iq9, k, simplify = FALSE)), recursive = FALSE)
+
+# 5. Evaluación masiva de modelos
+resultados_modelos_iq9 <- map_dfr(combinaciones_iq9, evaluar_modelo_iq9, data = datos_modelos_iq9)
+
+# RANKINGS DE MODELOS
+# 6. Top 15 modelos por menor AIC
+resultados_modelos_iq9 %>% arrange(AIC) %>% slice(1:15) %>% kable(digits = 3, caption = "Top 15 modelos IQ9 por menor AIC") %>% kable_styling(full_width = FALSE, bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+
+# 7. Top 15 modelos por mayor AUC
+resultados_modelos_iq9 %>% arrange(desc(AUC)) %>% slice(1:15) %>% kable(digits = 3, caption = "Top 15 modelos IQ9 por mayor AUC") %>% kable_styling(full_width = FALSE, bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+
+# 8. Ranking equilibrado: AIC + AUC + parsimonia
+mejores_eq_iq9 <- resultados_modelos_iq9 %>% mutate(rank_comb = rank(AIC) + rank(-AUC) + Num_variables) %>% arrange(rank_comb) %>% slice(1:15)
+mejores_eq_iq9 %>% kable(digits = 3, caption = "Top 15 modelos IQ9: equilibrio AIC, AUC y parsimonia") %>% kable_styling(full_width = FALSE, bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+
+# MODELO FINAL
+# 9. Ajuste del modelo final
+mejor_formula_iq9 <- mejores_eq_iq9$Variables[1]
+datos_modelo_final_iq9 <- datos_modelos_iq9 %>% select(all_of(c("Grupo_IQ9_Modelo", unlist(strsplit(mejor_formula_iq9, " \\+ "))))) %>% drop_na()
+modelo_final_iq9 <- glm(as.formula(paste("Grupo_IQ9_Modelo ~", mejor_formula_iq9)), data = datos_modelo_final_iq9, family = binomial)
+
+# 10. Diccionario de nombres para la tabla final
+traducir_variable_iq9 <- function(term) { case_when(term == "EDAD" ~ "Edad, años", term == "SAPSII" ~ "SAPS II", term == "AHTA_iq9Si" ~ "Antecedentes hipertensión: sí vs no", term == "ADBTM_iq9Si" ~ "Antecedentes diabetes mellitus: sí vs no", term == "ACARDIOP_iq9Si" ~ "Antecedentes cardiopatía/IAM: sí vs no", term == "AINMUNO_iq9Si" ~ "Inmunosupresión: sí vs no", term == "ANEOPLAS_iq9Si" ~ "Neoplasia: sí vs no", term == "TIPO_SN_IQ9Con NPT" ~ "Soporte nutricional con NPT vs NE exclusiva", term == "HORASIN" ~ "Horas hasta inicio del soporte nutricional", term == "TOTAL_DIAS_SN" ~ "Días totales de soporte nutricional", term == "NEC_NA_iq9Si" ~ "Necesidad de noradrenalina: sí vs no", term == "DIAS_UCI" ~ "Días en UCI", term == "DIAS_HOSP" ~ "Días de hospitalización", TRUE ~ term) }
+
+# 11. Tabla de resultados del modelo final
+# IC95% tipo Wald para evitar problemas de convergencia con confint perfilado
+tabla_modelo_final_iq9 <- tidy(modelo_final_iq9) %>% filter(term != "(Intercept)") %>% mutate(OR = exp(estimate), IC_inf = exp(estimate - 1.96 * std.error), IC_sup = exp(estimate + 1.96 * std.error), p_num = p.value, p = ifelse(p.value < 0.001, "<0.001", sprintf("%.3f", p.value)), OR_IC95 = sprintf("%.2f [%.2f - %.2f]", OR, IC_inf, IC_sup), Variable = traducir_variable_iq9(term), Comparacion = "Cumple IQ9 vs No cumple IQ9") %>% select(Comparacion, Variable, OR_IC95, p)
+
+tabla_modelo_final_iq9 %>% kable(caption = "Modelo final de factores asociados al cumplimiento documental completo del IQ9") %>% kable_styling(full_width = FALSE, bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+
+# 12. Métricas del modelo final
+metricas_modelo_final_iq9 <- mejores_eq_iq9 %>% slice(1) %>% select(Variables, Num_variables, N_modelo, Eventos, AIC, AUC, N_significativas, N_tendencia)
+metricas_modelo_final_iq9 %>% kable(digits = 3, caption = "Métricas del modelo final IQ9") %>% kable_styling(full_width = FALSE, bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+
+# CURVA ROC DEL MODELO FINAL
+# 13. Datos para curva ROC
+datos_roc_iq9 <- datos_modelo_final_iq9
+datos_roc_iq9$prob_cumple_iq9 <- predict(modelo_final_iq9, newdata = datos_roc_iq9, type = "response")
+
+# 14. ROC y AUC
+roc_final_iq9 <- roc(response = datos_roc_iq9$Grupo_IQ9_Modelo, predictor = datos_roc_iq9$prob_cumple_iq9, levels = c("No cumple", "Cumple"), direction = "<", quiet = TRUE)
+auc_final_iq9 <- as.numeric(auc(roc_final_iq9))
+
+# 15. Coordenadas ROC para ggplot
+df_roc_iq9 <- coords(roc_final_iq9, x = "all", ret = c("specificity", "sensitivity"), transpose = FALSE) %>% as.data.frame() %>% mutate(FPR = 1 - specificity, TPR = sensitivity)
+
+# 16. Gráfico ROC
+ggplot(df_roc_iq9, aes(x = FPR, y = TPR)) + geom_line(linewidth = 1.1, color = "#4C78A8") + geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "grey50") + annotate("text", x = 0.65, y = 0.15, label = paste0("AUC = ", round(auc_final_iq9, 3)), size = 5, fontface = "bold") + coord_equal() + labs(title = "Curva ROC del modelo final IQ9", subtitle = "Predicción del cumplimiento documental completo del IQ9", x = "1 - especificidad", y = "Sensibilidad") + theme_minimal(base_size = 14) + theme(plot.title = element_text(face = "bold"))
+```
+
+El modelo final seleccionado incluyó **6 predictores** —*edad, SAPS II, antecedente de cardiopatía/IAM, horas hasta el inicio del soporte nutricional, días en UCI y días de hospitalización*—, con un tamaño muestral de **268 pacientes** y **53 eventos** de cumplimiento documental completo del IQ9. El modelo mostró un **AIC de 251,574** y una capacidad discriminativa **moderada**, con **AUC = 0,751**, lo que indica una separación razonable entre pacientes con y sin cumplimiento completo del indicador.
+
+En el modelo ajustado, la probabilidad de **cumplimiento documental completo** se asoció de forma independiente con mayor **edad** —OR **1,03** por año; IC95%: **1,00-1,05**; *p* = **0,039**—, menor demora en el inicio del soporte nutricional —OR **0,98** por hora; IC95%: **0,97-1,00**; *p* = **0,027**— y mayor estancia en UCI —OR **1,03** por día; IC95%: **1,01-1,05**; *p* = **0,009**—. El antecedente de **cardiopatía/IAM** mostró una asociación positiva en rango de tendencia —OR **2,17**; IC95%: **0,97-4,88**; *p* = **0,061**—. En cambio, **SAPS II** y **días de hospitalización** no mantuvieron asociación independiente tras el ajuste. En conjunto, el modelo sugiere que el cumplimiento del IQ9 se concentra en pacientes con **mayor exposición asistencial**, **inicio más precoz del soporte** y **mayor permanencia en UCI**, más que en un patrón puramente dependiente de gravedad global.
+
+#### **Regresión de Cox**
+
+El modelo de Cox se construyó utilizando como evento el incumplimiento documental completo del IQ9. Se codificó el evento como 1 = No cumple IQ9 y 0 = Cumple IQ9. La variable de tiempo fue `DIAS_UCI`.
+
+Se incluyeron como variables candidatas las variables clínicas asociadas al cumplimiento del IQ9 en el análisis univariante y posteriormente utilizadas en la regresión logística multivariable, excluyendo variables de duración asistencial. `DIAS_UCI` no se incluyó como covariable porque constituye la variable temporal del modelo. `DIAS_HOSP` y `TOTAL_DIAS_SN` se excluyeron para evitar introducir variables evolutivas altamente dependientes de la duración del ingreso y potencialmente colineales con el tiempo de seguimiento.
+
+Se exploraron combinaciones de 2 a 6 variables, priorizando el equilibrio entre ajuste global (AIC), capacidad discriminativa mediante índice de concordancia (C-index) y parsimonia.
+
+```{r}
+library(dplyr); library(tidyr); library(broom); library(purrr); library(knitr); library(kableExtra); library(survival); library(pROC); library(ggplot2)
+
+# Evento: 1 = No cumple IQ9 | 0 = Cumple IQ9
+# Tiempo: DIAS_UCI
+
+# 1. Preparación de datos
+datos_cox_iq9 <- pacientes_NE_7d %>% mutate(Evento_NoCumple_IQ9 = case_when(Exito_IQ9 == TRUE ~ 0, Exito_IQ9 == FALSE ~ 1, TRUE ~ NA_real_), AHTA_iq9 = factor(case_when(AHTA == 0 ~ "No", AHTA == 1 ~ "Si", TRUE ~ NA_character_), levels = c("No", "Si")), ADBTM_iq9 = factor(case_when(ADBTM == 0 ~ "No", ADBTM == 1 ~ "Si", TRUE ~ NA_character_), levels = c("No", "Si")), ACARDIOP_iq9 = factor(case_when(ACARDIOP == 0 ~ "No", ACARDIOP == 1 ~ "Si", TRUE ~ NA_character_), levels = c("No", "Si")), AINMUNO_iq9 = factor(case_when(AINMUNO == 0 ~ "No", AINMUNO == 1 ~ "Si", TRUE ~ NA_character_), levels = c("No", "Si")), ANEOPLAS_iq9 = factor(case_when(ANEOPLAS == 0 ~ "No", ANEOPLAS == 1 ~ "Si", TRUE ~ NA_character_), levels = c("No", "Si")), NEC_NA_iq9 = factor(case_when(NEC_NA == 0 ~ "No", NEC_NA == 1 ~ "Si", TRUE ~ NA_character_), levels = c("No", "Si")), TIPO_SN_IQ9 = factor(case_when(TIPO_SN_Grupo == 1 ~ "NE exclusiva", TIPO_SN_Grupo %in% c(2, 3, 4) ~ "Con NPT", TRUE ~ NA_character_), levels = c("NE exclusiva", "Con NPT"))) %>% filter(!is.na(Evento_NoCumple_IQ9), !is.na(DIAS_UCI), DIAS_UCI > 0)
+
+# 2. Variables candidatas: Se excluyen DIAS_UCI, DIAS_HOSP y TOTAL_DIAS_SN por criterio metodológico
+variables_candidatas_cox_iq9 <- c("EDAD", "SAPSII", "AHTA_iq9", "ADBTM_iq9", "ACARDIOP_iq9", "AINMUNO_iq9", "ANEOPLAS_iq9", "TIPO_SN_IQ9", "HORASIN", "NEC_NA_iq9")
+
+# 3. Función para evaluar modelos de Cox
+evaluar_modelo_cox_iq9 <- function(vars, data) { tryCatch({ d_mod <- data %>% select(all_of(c("DIAS_UCI", "Evento_NoCumple_IQ9", vars))) %>% drop_na(); if (nrow(d_mod) < 80 || length(unique(d_mod$Evento_NoCumple_IQ9)) < 2) return(NULL); eventos <- sum(d_mod$Evento_NoCumple_IQ9 == 1); censurados <- sum(d_mod$Evento_NoCumple_IQ9 == 0); if (eventos < 30 || censurados < 20) return(NULL); mod <- coxph(as.formula(paste("Surv(DIAS_UCI, Evento_NoCumple_IQ9) ~", paste(vars, collapse = " + "))), data = d_mod); p_vals <- tidy(mod); c_index <- summary(mod)$concordance[1]; d_mod$score_cox <- predict(mod, newdata = d_mod, type = "lp"); roc_obj <- roc(response = d_mod$Evento_NoCumple_IQ9, predictor = d_mod$score_cox, levels = c(0, 1), direction = "<", quiet = TRUE); data.frame(Variables = paste(vars, collapse = " + "), Num_variables = length(vars), N_modelo = nrow(d_mod), Eventos_NoCumple = eventos, Censurados_Cumple = censurados, AIC = AIC(mod), C_index = as.numeric(c_index), AUC_score = as.numeric(auc(roc_obj)), N_significativas = sum(p_vals$p.value <= 0.05, na.rm = TRUE), N_tendencia = sum(p_vals$p.value <= 0.10, na.rm = TRUE)) }, error = function(e) NULL) }
+
+# 4. Combinaciones de variables
+combinaciones_cox_iq9 <- unlist(lapply(2:min(6, length(variables_candidatas_cox_iq9)), function(k) combn(variables_candidatas_cox_iq9, k, simplify = FALSE)), recursive = FALSE)
+
+# 5. Evaluación masiva de modelos
+resultados_modelos_cox_iq9 <- map_dfr(combinaciones_cox_iq9, evaluar_modelo_cox_iq9, data = datos_cox_iq9)
+
+# RANKINGS DE MODELOS
+# 6. Top 15 modelos por menor AIC
+resultados_modelos_cox_iq9 %>% arrange(AIC) %>% slice(1:15) %>% kable(digits = 3, caption = "Top 15 modelos Cox IQ9 por menor AIC") %>% kable_styling(full_width = FALSE, bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+
+# 7. Top 15 modelos por mayor C-index
+resultados_modelos_cox_iq9 %>% arrange(desc(C_index)) %>% slice(1:15) %>% kable(digits = 3, caption = "Top 15 modelos Cox IQ9 por mayor C-index") %>% kable_styling(full_width = FALSE, bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+
+# 8. Top 15 modelos por mayor AUC del score lineal
+resultados_modelos_cox_iq9 %>% arrange(desc(AUC_score)) %>% slice(1:15) %>% kable(digits = 3, caption = "Top 15 modelos Cox IQ9 por mayor AUC del score lineal") %>% kable_styling(full_width = FALSE, bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+
+# 9. Ranking equilibrado: AIC + C-index + AUC + parsimonia
+mejores_eq_cox_iq9 <- resultados_modelos_cox_iq9 %>% mutate(rank_comb = rank(AIC) + rank(-C_index) + rank(-AUC_score) + Num_variables) %>% arrange(rank_comb) %>% slice(1:15)
+mejores_eq_cox_iq9 %>% kable(digits = 3, caption = "Top 15 modelos Cox IQ9: equilibrio AIC, C-index, AUC y parsimonia") %>% kable_styling(full_width = FALSE, bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+
+# MODELO FINAL
+# 10. Ajuste del modelo final
+mejor_formula_cox_iq9 <- mejores_eq_cox_iq9$Variables[1]
+datos_modelo_final_cox_iq9 <- datos_cox_iq9 %>% select(all_of(c("DIAS_UCI", "Evento_NoCumple_IQ9", unlist(strsplit(mejor_formula_cox_iq9, " \\+ "))))) %>% drop_na()
+modelo_final_cox_iq9 <- coxph(as.formula(paste("Surv(DIAS_UCI, Evento_NoCumple_IQ9) ~", mejor_formula_cox_iq9)), data = datos_modelo_final_cox_iq9)
+
+# 11. Diccionario de nombres
+traducir_variable_cox_iq9 <- function(term) { case_when(term == "EDAD" ~ "Edad, años", term == "SAPSII" ~ "SAPS II", term == "AHTA_iq9Si" ~ "Antecedentes hipertensión: sí vs no", term == "ADBTM_iq9Si" ~ "Antecedentes diabetes mellitus: sí vs no", term == "ACARDIOP_iq9Si" ~ "Antecedentes cardiopatía/IAM: sí vs no", term == "AINMUNO_iq9Si" ~ "Inmunosupresión: sí vs no", term == "ANEOPLAS_iq9Si" ~ "Neoplasia: sí vs no", term == "TIPO_SN_IQ9Con NPT" ~ "Soporte nutricional con NPT vs NE exclusiva", term == "HORASIN" ~ "Horas hasta inicio del soporte nutricional", term == "NEC_NA_iq9Si" ~ "Necesidad de noradrenalina: sí vs no", TRUE ~ term) }
+
+# 12. Tabla del modelo final Cox
+tabla_modelo_final_cox_iq9 <- tidy(modelo_final_cox_iq9) %>% mutate(HR = exp(estimate), IC_inf = exp(estimate - 1.96 * std.error), IC_sup = exp(estimate + 1.96 * std.error), p = ifelse(p.value < 0.001, "<0.001", sprintf("%.3f", p.value)), HR_IC95 = sprintf("%.2f [%.2f - %.2f]", HR, IC_inf, IC_sup), Variable = traducir_variable_cox_iq9(term), Comparacion = "No cumple IQ9 vs Cumple IQ9") %>% select(Comparacion, Variable, HR_IC95, p)
+tabla_modelo_final_cox_iq9 %>% kable(caption = "Modelo final de Cox: factores asociados al incumplimiento documental del IQ9") %>% kable_styling(full_width = FALSE, bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+
+# 13. Métricas del modelo final
+metricas_modelo_final_cox_iq9 <- mejores_eq_cox_iq9 %>% slice(1) %>% select(Variables, Num_variables, N_modelo, Eventos_NoCumple, Censurados_Cumple, AIC, C_index, AUC_score, N_significativas, N_tendencia)
+metricas_modelo_final_cox_iq9 %>% kable(digits = 3, caption = "Métricas del modelo final Cox IQ9") %>% kable_styling(full_width = FALSE, bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+
+# CURVA ROC DEL SCORE LINEAL DEL MODELO COX
+# 14. Score lineal del modelo Cox
+datos_roc_cox_iq9 <- datos_modelo_final_cox_iq9
+datos_roc_cox_iq9$score_cox_iq9 <- predict(modelo_final_cox_iq9, newdata = datos_roc_cox_iq9, type = "lp")
+
+# 15. Curva ROC del score lineal
+roc_cox_iq9 <- roc(response = datos_roc_cox_iq9$Evento_NoCumple_IQ9, predictor = datos_roc_cox_iq9$score_cox_iq9, levels = c(0, 1), direction = "<", quiet = TRUE)
+auc_cox_iq9 <- as.numeric(auc(roc_cox_iq9))
+print(paste("AUC del score Cox IQ9:", round(auc_cox_iq9, 3)))
+
+# 16. Coordenadas para ggplot
+df_roc_cox_iq9 <- coords(roc_cox_iq9, x = "all", ret = c("specificity", "sensitivity"), transpose = FALSE) %>% as.data.frame() %>% mutate(FPR = 1 - specificity, TPR = sensitivity)
+
+# 17. Gráfico ROC
+ggplot(df_roc_cox_iq9, aes(x = FPR, y = TPR)) + geom_line(linewidth = 1.1, color = "#4C78A8") + geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "grey50") + annotate("text", x = 0.65, y = 0.15, label = paste0("AUC = ", round(auc_cox_iq9, 3)), size = 5, fontface = "bold") + coord_equal() + labs(title = "Curva ROC del score lineal del modelo Cox IQ9", subtitle = "Predicción del incumplimiento documental completo del IQ9", x = "1 - especificidad", y = "Sensibilidad") + theme_minimal(base_size = 14) + theme(plot.title = element_text(face = "bold"))
+```
+
+El modelo final de Cox incluyó cinco predictores —*SAPS II, hipertensión, inmunosupresión, tipo de soporte nutricional y necesidad de noradrenalina*— sobre una muestra de 280 pacientes, con 223 eventos de incumplimiento documental y 57 pacientes censurados por cumplimiento completo del IQ9. El rendimiento global fue limitado: el C-index fue de **0,579**, lo que indica una capacidad discriminativa baja en términos de ordenación temporal del riesgo, mientras que el AUC del score lineal fue de **0,667**, compatible con una discriminación modesta frente al evento binario final.
+
+En el modelo ajustado, únicamente el tipo de soporte nutricional mantuvo asociación estadísticamente significativa con el evento. Los **pacientes con soporte nutricional que incluyó NPT presentaron menor tasa instantánea de incumplimiento documental que los pacientes con NE exclusiva** —HR 0,59; IC95%: 0,42-0,85; *p = 0,004*—. En términos prácticos, este resultado sugiere que la presencia de NPT se asocia a una mayor trazabilidad documental del proceso nutricional. El resto de covariables —SAPS II, hipertensión, inmunosupresión y noradrenalina— no mantuvieron asociación independiente con el incumplimiento del IQ9. En conjunto, el modelo de Cox aporta una señal estadística específica, centrada en el tipo de soporte nutricional, pero con capacidad predictiva global solo discreta.
+
+### **Mortalidad a los 28 días**
+
+Se realizó un análisis de supervivencia mediante curvas de Kaplan-Meier para comparar la supervivencia acumulada a 28 días según el cumplimiento documental del IQ9. La variable de tiempo fue `ESTADA28` y el evento de interés fue la mortalidad a 28 días, definida mediante `MUERTO28`. Los pacientes se estratificaron en dos grupos: cumplimiento documental completo del IQ9 frente a incumplimiento del indicador. La comparación entre curvas se realizó mediante test de log-rank.
+
+```{r}
+library(dplyr); library(survival); library(survminer); library(knitr)
+
+# Tiempo: ESTADA28 | Evento: MUERTO28
+# Grupos: Cumple IQ9 vs No cumple IQ9
+
+# 1. Preparar base
+datos_km_iq9 <- pacientes_NE_7d %>% mutate(Grupo_IQ9_KM = factor(case_when(Exito_IQ9 == TRUE ~ "Cumple IQ9", Exito_IQ9 == FALSE ~ "No cumple IQ9", TRUE ~ NA_character_), levels = c("Cumple IQ9", "No cumple IQ9")), Evento_Muerte28 = case_when(MUERTO28 == 1 ~ 1, MUERTO28 == 0 ~ 0, TRUE ~ NA_real_)) %>% filter(!is.na(Grupo_IQ9_KM), !is.na(ESTADA28), !is.na(Evento_Muerte28))
+
+# 2. Comprobar n y eventos por grupo
+datos_km_iq9 %>% group_by(Grupo_IQ9_KM) %>% summarise(n = n(), muertes_28d = sum(Evento_Muerte28 == 1, na.rm = TRUE), mortalidad_28d = round(mean(Evento_Muerte28 == 1, na.rm = TRUE) * 100, 1), .groups = "drop") %>% kable(caption = "Mortalidad a 28 días según cumplimiento documental del IQ9")
+
+# 3. Ajustar Kaplan-Meier y test de log-rank
+km_iq9 <- survfit(Surv(ESTADA28, Evento_Muerte28) ~ Grupo_IQ9_KM, data = datos_km_iq9)
+logrank_iq9 <- survdiff(Surv(ESTADA28, Evento_Muerte28) ~ Grupo_IQ9_KM, data = datos_km_iq9)
+p_logrank_iq9 <- 1 - pchisq(logrank_iq9$chisq, length(logrank_iq9$n) - 1)
+p_logrank_iq9_txt <- ifelse(p_logrank_iq9 < 0.001, "<0.001", sprintf("%.3f", p_logrank_iq9))
+
+# 4. Gráfico Kaplan-Meier
+ggsurvplot(km_iq9, data = datos_km_iq9, risk.table = TRUE, pval = paste0("Log-rank p = ", p_logrank_iq9_txt), conf.int = FALSE, censor = TRUE, xlab = "Días de seguimiento", ylab = "Supervivencia acumulada", title = "Supervivencia a 28 días según cumplimiento documental del IQ9", legend.title = "Grupo IQ9", legend.labs = c("Cumple IQ9", "No cumple IQ9"), break.time.by = 7, xlim = c(0, 28), risk.table.height = 0.25, ggtheme = theme_minimal())
+```
+
+El análisis de Kaplan-Meier no mostró diferencias estadísticamente significativas en la supervivencia acumulada a 28 días según el cumplimiento documental del IQ9 (**log-rank p = 0,658**). Las curvas de ambos grupos permanecen prácticamente superpuestas durante todo el periodo de seguimiento, sin separación visual relevante ni patrón divergente sostenido.
+
+En términos absolutos, la mortalidad a 28 días fue ligeramente inferior en el grupo **Cumple IQ9 —13/60 pacientes; 21,7%**— frente al grupo **No cumple IQ9 —58/237 pacientes; 24,5%**—, pero esta diferencia fue pequeña y estadísticamente no significativa. Por tanto, en este análisis no ajustado, el cumplimiento documental completo del IQ9 **no se asoció con diferencias detectables en supervivencia a 28 días**.
+
+### **Conclusión Indicador de Calidad 9**
+
+En conjunto, el análisis del IQ9 evidencia un **cumplimiento documental bajo** de la monitorización integral de la nutrición enteral (NE) en la cohorte evaluada. Solo **60 de los 297 pacientes** con NE durante al menos 7 días presentaron registro completo de todos los bloques exigidos, lo que supone una tasa de cumplimiento del **20,2%** (IC95%: **15,88-25,32%**), muy alejada del estándar teórico del **100%**.
+
+El problema principal no parece ser una ausencia generalizada de vigilancia clínica a pie de cama, sino una **baja trazabilidad documental** del proceso de monitorización. El IQ9 se comporta como un indicador compuesto muy estricto: basta la ausencia de un único dato analítico, nutricional o digestivo para que el paciente sea clasificado como no correctamente monitorizado.
+
+**Interpretación del fallo del indicador**
+
+El IQ9 no mide únicamente si el paciente fue vigilado, sino si esa vigilancia quedó registrada de forma completa, estructurada y simultánea en todos los componentes evaluables de la base ENPIC. Por tanto, el incumplimiento debe interpretarse principalmente como un **fallo de completitud del registro clínico-nutricional**, no necesariamente como una ausencia real de control asistencial.
+
+La regla de “todo o nada” condiciona fuertemente el resultado. Aunque muchos pacientes pudieron tener una monitorización parcial adecuada, el indicador solo considera cumplimiento cuando todos los bloques están completos. Esto explica que la tasa global sea muy baja pese a que algunos dominios, como el registro de complicaciones digestivas o el control general de complicaciones, presentaran una completitud muy elevada.
+
+**Origen principal de los fallos documentales**
+
+El análisis por bloques muestra que el incumplimiento del IQ9 se concentra de forma clara en los componentes analíticos:
+
+- **Bloque C: Analítica completa del día 7**: fue el principal punto de fallo, con **194 pacientes** afectados (**65,3%**).
+
+- **Bloque B: Ionograma basal del día 1**: también presentó una elevada proporción de omisión, con **164 pacientes** (**55,2%**).
+
+- **Bloque A: Aporte calórico diario**: mostró una pérdida documental mucho menor, limitada a **11 pacientes** (**3,7%**).
+
+- **Bloques D y E**: control de complicaciones y vigilancia digestiva, no presentaron fallos documentales en la cohorte evaluable.
+
+Este patrón indica que el bajo cumplimiento global del IQ9 no deriva de una pérdida uniforme de información, sino de un **déficit muy localizado en la solicitud, disponibilidad o registro de determinados parámetros analíticos**.
+
+**Análisis microscópico de las omisiones**
+
+El desglose por variable individual confirma que los mayores problemas se sitúan en el perfil lipídico, hepático y electrolítico. Las omisiones más frecuentes fueron:
+
+- **COLESTER7**: 170 pacientes sin registro (**57,2%**).
+
+- **TRIGLI7**: 166 pacientes (**55,9%**).
+
+- **FOSFORO1**: 128 pacientes (**43,1%**).
+
+- **MAGNESIO1**: 120 pacientes (**40,4%**).
+
+- **FALCALI7**: 106 pacientes (**35,7%**).
+
+- **CALCIO1**: 101 pacientes (**34,0%**).
+
+En cambio, el registro calórico diario presentó pérdidas muy limitadas, especialmente en comparación con los parámetros analíticos. Esto sugiere que el sistema de registro nutricional diario funciona de forma razonablemente estable, mientras que la monitorización bioquímica completa no parece estar integrada de forma homogénea en la rutina documental.
+
+**Perfil de los pacientes con cumplimiento completo**
+
+El análisis univariante mostró que los pacientes que cumplían el IQ9 presentaban un perfil clínico más complejo: mayor edad, mayor SAPS II, mayor NUTRIC Score, más comorbilidad y mayor duración asistencial. También tenían con más frecuencia soporte nutricional mixto con NPT y menor demora hasta el inicio del soporte nutricional.
+
+Este patrón sugiere que la monitorización completa se concentra en pacientes con **mayor gravedad percibida, mayor exposición asistencial y mayor intensidad de seguimiento clínico-analítico**. Es decir, el cumplimiento del IQ9 no parece distribuirse de forma homogénea en toda la cohorte, sino que tiende a mejorar en pacientes que probablemente generaron mayor atención clínica o mayor necesidad de control bioquímico.
+
+**Análisis multivariable y capacidad discriminativa**
+
+En la regresión logística binaria, el modelo final alcanzó una capacidad discriminativa moderada (**AUC = 0,751**). La probabilidad de cumplimiento documental completo se asoció de forma independiente con:
+
+- **Mayor edad**: OR 1,03 por año; IC95%: 1,00-1,05; p = 0,039.
+
+- **Menor demora en el inicio del soporte nutricional**: OR 0,98 por hora; IC95%: 0,97-1,00; p = 0,027.
+
+- **Mayor estancia en UCI**: OR 1,03 por día; IC95%: 1,01-1,05; p = 0,009.
+
+El antecedente de cardiopatía/IAM mostró una asociación positiva en rango de tendencia —OR 2,17; p = 0,061—. En cambio, SAPS II y días de hospitalización no mantuvieron asociación independiente tras el ajuste.
+
+Desde un punto de vista estadístico, estos resultados indican que el cumplimiento completo del IQ9 se relaciona más con **exposición al proceso asistencial**, **inicio precoz del soporte** y **permanencia en UCI** que con un patrón aislado de gravedad basal.
+
+**Regresión de Cox**
+
+El modelo de Cox, planteado con DIAS_UCI como variable temporal y el incumplimiento documental como evento, mostró una capacidad predictiva inferior a la regresión logística. El modelo final presentó un **C-index de 0,579** y un **AUC del score lineal de 0,667**, lo que indica una discriminación global baja o, como máximo, modesta.
+
+En este análisis, la única variable que mantuvo asociación independiente fue el tipo de soporte nutricional. Los pacientes con soporte que incluía NPT presentaron menor tasa instantánea de incumplimiento documental frente a los pacientes con NE exclusiva —HR 0,59; IC95%: 0,42-0,85; p = 0,004—.
+
+Este hallazgo refuerza la idea de que la presencia de NPT puede activar circuitos de monitorización más estrictos o más protocolizados, con mayor control analítico y documental.
+
+**Relación con mortalidad a 28 días**
+
+El análisis de Kaplan-Meier no mostró diferencias estadísticamente significativas en supervivencia acumulada a 28 días según el cumplimiento documental del IQ9 (**log-rank p = 0,658**). Las curvas fueron prácticamente superponibles durante todo el seguimiento.
+
+La mortalidad a 28 días fue ligeramente inferior en el grupo con cumplimiento completo —**13/60 pacientes; 21,7%**— frente al grupo sin cumplimiento —**58/237 pacientes; 24,5%**—, pero la diferencia fue pequeña y no significativa.
+
+Por tanto, el IQ9 no se comportó como un marcador pronóstico directo de mortalidad a corto plazo. Su relevancia se sitúa principalmente en el ámbito de la **calidad del proceso documental y de monitorización**, no en la predicción directa de supervivencia.
+
+**Problemas detectados en el proceso asistencial**
+
+El análisis del IQ9 identifica varios puntos críticos:
+
+- **Bajo cumplimiento global** del indicador cuando se aplica la regla estricta de monitorización completa.
+
+- **Alta dependencia del resultado respecto a parámetros analíticos concretos**, especialmente colesterol, triglicéridos, fósforo, magnesio, calcio y perfil hepático.
+
+- **Buena completitud relativa** del registro calórico diario y de las variables digestivas evaluadas.
+
+- **Mayor cumplimiento en pacientes más complejos o con soporte mixto**, lo que sugiere una monitorización más intensa en subgrupos seleccionados.
+
+- **Ausencia de asociación con mortalidad a 28 días**, lo que delimita el indicador como medida de proceso documental más que como marcador pronóstico inmediato.
+
+**Auditoría clínica y oportunidades de mejora**
+
+Desde la perspectiva de calidad asistencial, el IQ9 identifica una oportunidad de mejora muy concreta: **estandarizar el registro de la monitorización analítica y metabólica de la NE**.
+
+Las acciones prioritarias deberían centrarse en:
+
+1. **Crear perfiles analíticos predefinidos** para pacientes con NE prolongada, especialmente al ingreso y al séptimo día.
+
+2. **Incorporar alertas automáticas** para solicitar o registrar ionograma completo, perfil lipídico y perfil hepático.
+
+3. **Estandarizar plantillas de seguimiento nutricional**, integrando aporte calórico, tolerancia digestiva y control bioquímico.
+
+4. **Diferenciar claramente monitorización clínica real y monitorización documentada**, evitando que controles realizados pero no registrados se traduzcan en incumplimiento del indicador.
+
+5. **Revisar específicamente las variables con mayor omisión**, como `COLESTER7`, `TRIGLI7`, `FOSFORO1`, `MAGNESIO1`, `CALCIO1` y `FALCALI7`.
+
+6. **Extender la monitorización completa a todos los pacientes con NE prolongada**, y no solo a los de mayor complejidad o con soporte mixto.
+
+*La mejora del IQ9 no requiere necesariamente aumentar la vigilancia clínica desde cero, sino convertir esa vigilancia en un proceso estructurado, homogéneo y trazable.*
+
+**Relevancia final del indicador**
+
+El IQ9 es uno de los indicadores más exigentes de la auditoría porque evalúa la monitorización de la NE como un proceso integral y documentado. Su bajo cumplimiento no debe interpretarse como prueba directa de falta de atención clínica, sino como un **marcador de baja estandarización documental**.
+
+El valor del indicador reside precisamente en hacer visible un problema que puede pasar desapercibido: la vigilancia nutricional puede realizarse de forma parcial o dispersa, pero si no queda registrada de manera sistemática, no es auditable ni comparable.
+
+En consecuencia, el IQ9 constituye un indicador especialmente útil para detectar fallos de trazabilidad, homogeneización y protocolización del seguimiento nutricional. Su mejora debería orientarse a reforzar los circuitos de registro, la solicitud automática de controles analíticos y la integración del seguimiento nutricional en la historia clínica electrónica.
+
