@@ -1,0 +1,172 @@
+---
+title: "Indicador 12: Definición y Disfunción Hepática Asociada a la Nutrición Parenteral (DHANP)"
+author: "Carmen Macías Portillo"
+date: "`r Sys.Date()`"
+output: 
+  prettydoc::html_pretty:
+    theme: tactile
+    toc: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+```{r}
+# Cargamos la librería 'haven', necesaria para cargar archivos .sav (SPSS)
+library(haven)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+# Cargamos el archivo .sav
+enpic <- read_sav("ENPIC_BMI_525.sav")
+```
+
+## **Indicador de Calidad 12** (**IQ12**): Definición disfunción hepática asociada a la nutrición parenteral (DHANP)
+
+El IQ12 evalúa la incidencia de alteraciones hepáticas compatibles con disfunción hepática asociada a la nutrición parenteral (DHANP) en pacientes que reciben nutrición parenteral (NP). Se trata de un indicador de resultado y seguridad, orientado a cuantificar la aparición de patrones analíticos hepáticos potencialmente relacionados con la exposición a NP.
+
+En la base ENPIC, el indicador se ha operativizado mediante la identificación de alteraciones bioquímicas disponibles en el registro analítico. Por tanto, el resultado debe interpretarse como una estimación de incidencia de **nueva alteración hepática compatible con DHANP**, no como una atribución causal directa de la lesión hepática a la NP.
+
+Para evitar sobredimensionar el evento por alteraciones hepáticas ya presentes al inicio, el indicador se ha restringido a pacientes con NP prolongada y **sin alteración hepática basal documentada en el día 1**, evaluando posteriormente si desarrollan alteración compatible con DHANP en el día 7.
+
+Para evaluar la incidencia de DHANP de nueva aparición, el indicador se ha operativizado bajo los siguientes criterios técnicos:
+
+- **Población diana** ($N$): Pacientes con nutrición parenteral documentada durante al menos 7 días (`TOTALNPT22 >= 7`), fecha de inicio de NPT registrada (`Inicio_NPT` no ausente), analítica hepática basal evaluable y ausencia de alteración hepática compatible con DHANP en el día 1.
+
+- **Casos con evento** ($n$): Pacientes de la población diana que desarrollan en el día 7 al menos una alteración compatible con DHANP según los criterios disponibles en ENPIC.
+
+Se consideraron tres patrones analíticos principales:
+
+- **Colestasis**: Fosfatasa alcalina > 280 UI/L, GGT > 50 UI/L o bilirrubina total > 1,2 mg/dL.
+
+- **Necrosis hepática**: GOT > 40 UI/L o GPT > 42 UI/L, junto con bilirrubina total > 1,2 mg/dL o INR > 1,4.
+
+- **Lesión mixta**: Fosfatasa alcalina > 280 UI/L o GGT > 50 UI/L, junto con GOT > 40 UI/L o GPT > 42 UI/L.
+
+Dado que ENPIC no permite confirmar de forma automatizada la atribución etiológica de cada alteración hepática a la NP, el IQ12 debe interpretarse como una estimación pragmática de alteración hepática compatible con DHANP de nueva aparición, condicionada por la gravedad basal, la sepsis, el shock, el fallo multiorgánico, los fármacos, la cirugía, la hepatopatía previa y la duración del soporte nutricional.
+
+La proporción de incidencia se calculó como el cociente entre pacientes que desarrollaron alteración hepática compatible con DHANP en el día 7 y pacientes con NP prolongada, sin alteración hepática basal documentada.
+
+$$IQ12 = \left( \frac{\text{Nº de pacientes con nueva alteración hepática compatible con DHANP en día 7}}{\text{Nº de pacientes con NP prolongada sin alteración hepática basal}} \right) \times 100$$
+
+Para cuantificar la precisión de la estimación se calculó el intervalo de confianza binomial al 95%.
+
+```{r}
+library(dplyr); library(ggplot2); library(forcats)
+
+# 1. Denominador inicial: pacientes con NP prolongada y fecha de inicio registrada
+pacientes_NP_iq12 <- enpic %>% filter(TOTALNPT22 >= 7, !is.na(Inicio_NPT)) %>% mutate(FA_1 = FALCALI1, GGT_1 = GAMGT1, BILI_1 = FILIRUB1, GOT_1 = GOT1, GPT_1 = GPT1, INR_1 = INR1, FA_7 = FALCALI7, GGT_7 = GAMGT7, BILI_7 = FILIRUB7, GOT_7 = GOT7, GPT_7 = GPT7, INR_7 = INR7)
+
+# 2. Evaluabilidad analítica
+# Se exige que exista al menos algún dato hepático basal y algún dato hepático en día 7.
+# La ausencia de alteración basal se interpreta sobre las variables disponibles.
+pacientes_NP_iq12 <- pacientes_NP_iq12 %>% mutate(Hepatico_D1_evaluable = if_any(c(FA_1, GGT_1, BILI_1, GOT_1, GPT_1, INR_1), ~ !is.na(.x)), Hepatico_D7_evaluable = if_any(c(FA_7, GGT_7, BILI_7, GOT_7, GPT_7, INR_7), ~ !is.na(.x)))
+
+# 3. Definición de alteración hepática basal en día 1
+pacientes_NP_iq12 <- pacientes_NP_iq12 %>% mutate(Colestasis_D1 = (!is.na(FA_1) & FA_1 > 280) | (!is.na(GGT_1) & GGT_1 > 50) | (!is.na(BILI_1) & BILI_1 > 1.2), Necrosis_D1 = ((!is.na(GOT_1) & GOT_1 > 40) | (!is.na(GPT_1) & GPT_1 > 42)) & ((!is.na(BILI_1) & BILI_1 > 1.2) | (!is.na(INR_1) & INR_1 > 1.4)), Mixta_D1 = ((!is.na(FA_1) & FA_1 > 280) | (!is.na(GGT_1) & GGT_1 > 50)) & ((!is.na(GOT_1) & GOT_1 > 40) | (!is.na(GPT_1) & GPT_1 > 42)), Alteracion_Hepatica_D1 = Colestasis_D1 | Necrosis_D1 | Mixta_D1)
+
+# 4. Definición de alteración hepática compatible con DHANP en día 7
+pacientes_NP_iq12 <- pacientes_NP_iq12 %>% mutate(Colestasis_D7 = (!is.na(FA_7) & FA_7 > 280) | (!is.na(GGT_7) & GGT_7 > 50) | (!is.na(BILI_7) & BILI_7 > 1.2), Necrosis_D7 = ((!is.na(GOT_7) & GOT_7 > 40) | (!is.na(GPT_7) & GPT_7 > 42)) & ((!is.na(BILI_7) & BILI_7 > 1.2) | (!is.na(INR_7) & INR_7 > 1.4)), Mixta_D7 = ((!is.na(FA_7) & FA_7 > 280) | (!is.na(GGT_7) & GGT_7 > 50)) & ((!is.na(GOT_7) & GOT_7 > 40) | (!is.na(GPT_7) & GPT_7 > 42)), DHANP_D7 = Colestasis_D7 | Necrosis_D7 | Mixta_D7)
+
+# 5. Población final evaluable:
+# Pacientes con NP >= 7 días, analítica basal evaluable,
+# analítica de día 7 evaluable y sin alteración hepática basal.
+pacientes_IQ12_evaluable <- pacientes_NP_iq12 %>% filter(Hepatico_D1_evaluable == TRUE, Hepatico_D7_evaluable == TRUE, Alteracion_Hepatica_D1 == FALSE)
+Denominador_IQ12 <- nrow(pacientes_IQ12_evaluable)
+
+# 6. Numerador:
+# Pacientes que desarrollan nueva alteración hepática compatible con DHANP en día 7.
+Numerador_IQ12 <- sum(pacientes_IQ12_evaluable$DHANP_D7 == TRUE, na.rm = TRUE)
+IQ12 <- (Numerador_IQ12 / Denominador_IQ12) * 100
+test_iq12 <- prop.test(Numerador_IQ12, Denominador_IQ12, conf.level = 0.95)
+IC_Inf_IQ12 <- round(test_iq12$conf.int[1] * 100, 2); IC_Sup_IQ12 <- round(test_iq12$conf.int[2] * 100, 2)
+
+# 7. Resultados principales
+print(paste("Número de pacientes con NP que desarrollan disfunción hepática:", Numerador_IQ12)); print(paste("Número de pacientes con Nutrición Parenteral sin disfunción hepática previa:", Denominador_IQ12)); print(paste("El", round(IQ12, 2), "% de los pacientes con Nutrición Parenteral desarrollaron disfunción hepática con un intervalo de confianza al 95% de [", IC_Inf_IQ12, "% -", IC_Sup_IQ12, "%]"))
+```
+
+Tras restringir el análisis a pacientes con nutrición parenteral prolongada, analítica hepática basal evaluable y ausencia de alteración hepática compatible con DHANP en el día 1, el denominador final del IQ12 quedó constituido por `r Denominador_IQ12` pacientes.
+
+De ellos, `r Numerador_IQ12` desarrollaron en el día 7 una nueva alteración analítica compatible con DHANP, lo que supone una incidencia del `r round(IQ12, 2)`% (IC95%: `r IC_Inf_IQ12` - `r IC_Sup_IQ12`%).
+
+Este resultado debe interpretarse como la incidencia de **nueva alteración hepática compatible con DHANP** en pacientes expuestos a NP prolongada, y no como prueba definitiva de hepatotoxicidad causada por la NP. La depuración aplicada mejora la especificidad clínica del indicador, al excluir a los pacientes que ya presentaban alteración hepática basal documentada.
+
+### **Desglose de patrones clínicos**
+
+Entre los `r Numerador_IQ12` pacientes que desarrollaron nueva alteración hepática compatible con DHANP en el día 7, el patrón clínico se clasificó de forma jerárquica y mutuamente excluyente.
+
+La lesión mixta se priorizó sobre la necrosis hepática aislada y esta, a su vez, sobre la colestasis aislada. Por tanto, los subtipos no representan categorías independientes superpuestas, sino el patrón predominante asignado a cada paciente según el árbol diagnóstico definido.
+
+```{r}
+# 1. Desglose de patrones clínicos de DHANP de nueva aparición (con saltos de línea)
+datos_subtipos_iq12 <- pacientes_IQ12_evaluable %>% filter(DHANP_D7 == TRUE) %>% mutate(Patron_Clinico = case_when(Mixta_D7 == TRUE ~ "Lesión mixta\n(colestasis + necrosis)", Necrosis_D7 == TRUE ~ "Necrosis\nhepática", Colestasis_D7 == TRUE ~ "Colestasis\naislada", TRUE ~ "Otro patrón")) %>% group_by(Patron_Clinico) %>% summarise(Casos = n(), .groups = "drop") %>% mutate(Porcentaje = round((Casos / Denominador_IQ12) * 100, 2))
+
+fila_total_iq12 <- data.frame(Patron_Clinico = "TOTAL PACIENTES\nCON DHANP", Casos = Numerador_IQ12, Porcentaje = round(IQ12, 2))
+
+df_grafico_iq12 <- bind_rows(fila_total_iq12, datos_subtipos_iq12) %>% arrange(desc(Porcentaje)) %>% mutate(Patron_Clinico = factor(Patron_Clinico, levels = unique(Patron_Clinico)), Patron_Clinico = fct_relevel(Patron_Clinico, "TOTAL PACIENTES\nCON DHANP", after = 0))
+
+# 2. Gráfico IQ12 estético y balanceado
+grafico_iq12_vertical <- ggplot(df_grafico_iq12, aes(x = Patron_Clinico, y = Porcentaje)) +
+  geom_col(aes(fill = Patron_Clinico == "TOTAL PACIENTES\nCON DHANP"), width = 0.55, show.legend = FALSE) +
+  scale_fill_manual(values = c("TRUE" = "#c0392b", "FALSE" = "#f39c12")) +
+  geom_hline(yintercept = 20, linetype = "dashed", color = "#c0392b", linewidth = 0.8) +
+  annotate("text", x = nrow(df_grafico_iq12) + 0.4, y = 23.5, label = "Límite máx. (<20%)", color = "#c0392b", fontface = "bold", hjust = 1, size = 3.5) +
+  geom_text(aes(label = paste0(Porcentaje, "%\n(", Casos, " pac.)")), vjust = -0.3, size = 3.8, fontface = "bold", color = "#333333", lineheight = 0.9) +
+  scale_y_continuous(limits = c(0, max(df_grafico_iq12$Porcentaje, na.rm = TRUE) + 15), breaks = seq(0, 100, by = 10)) +
+  labs(
+    title = "Disfunción hepática asociada a nutrición parenteral (DHANP)",
+    subtitle = paste0("Incidencia de nueva alteración hepática y desglose de patrones (N = ", Denominador_IQ12, ")"),
+    x = NULL,
+    y = "Incidencia sobre pacientes con NP prolongada\nsin alteración basal (%)"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.title = element_text(face = "bold", size = 13, hjust = 0.5),
+    plot.subtitle = element_text(margin = margin(b = 20), hjust = 0.5, color = "grey30", size = 11),
+    axis.text.x = element_text(face = "bold", size = 10, color = "black", lineheight = 0.9, margin = margin(t = 5)),
+    axis.title.y = element_text(size = 11, margin = margin(r = 15), face = "bold", color = "grey30"),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor = element_blank(),
+    plot.margin = margin(20, 20, 20, 20)
+  )
+
+print(grafico_iq12_vertical)
+```
+
+### **Conclusión IQ12**
+
+En conjunto, el análisis del IQ12 evidencia una **incidencia elevada de nueva alteración hepática compatible con disfunción hepática asociada a nutrición parenteral** (**DHANP**) en pacientes con NP prolongada y sin alteración hepática basal documentada.
+
+Tras aplicar esta depuración, el denominador final quedó constituido por **33 pacientes evaluables**. De ellos, **16 pacientes** desarrollaron en el día 7 una nueva alteración analítica compatible con DHANP, lo que supone una incidencia del **48,48%** (IC95%: **31,17 - 66,15%**).
+
+Este resultado supera ampliamente el estándar de seguridad establecido para el indicador (**<20%**), por lo que el IQ12 muestra un **incumplimiento relevante**. La depuración aplicada refuerza la validez clínica del resultado, ya que no se contabilizan alteraciones hepáticas ya presentes al inicio, sino eventos de nueva aparición durante la exposición a NP prolongada.
+
+El patrón predominante fue la **colestasis aislada** —**11 pacientes**; **33,33%**—, seguida de la **lesión mixta** —**5 pacientes**; **15,15%**—. No se identificaron casos clasificados como necrosis hepática aislada en el desglose final. Esto sugiere que la señal principal del indicador se concentra en alteraciones de perfil colestásico o colestásico-mixto.
+
+No obstante, el resultado debe interpretarse con prudencia. El IQ12 identifica **alteraciones analíticas compatibles con DHANP**, pero no permite demostrar causalidad directa de la NP, ya que en el paciente crítico pueden coexistir sepsis, shock, fallo multiorgánico, cirugía, fármacos hepatotóxicos, colestasis del paciente crítico o hepatopatía previa no documentada.
+
+**Por qué no se realiza análisis univariante ni multivariante**
+
+No se considera adecuado realizar análisis univariante ni multivariante a partir de este IQ12 por el **tamaño muestral reducido**. Tras la depuración basal, solo quedan **33 pacientes evaluables**, con **16 eventos**. Esta n es insuficiente para obtener comparaciones robustas entre grupos o construir modelos ajustados fiables.
+
+Un análisis multivariable en estas condiciones tendría un riesgo elevado de **sobreajuste**, estimaciones inestables e intervalos de confianza muy amplios. Además, el IQ12 funciona principalmente como un **indicador descriptivo de seguridad**, no como un modelo etiológico destinado a identificar factores independientes asociados a DHANP.
+
+Por tanto, el análisis más adecuado es el cálculo de la incidencia, su intervalo de confianza, la comparación con el estándar y el desglose descriptivo de patrones clínicos.
+
+**Auditoría clínica y oportunidades de mejora**
+
+Desde la perspectiva de calidad asistencial, el IQ12 debe entenderse como un indicador de **seguridad hepática durante la nutrición parenteral**. Su incumplimiento sugiere la necesidad de reforzar varios puntos críticos:
+
+1. **Vigilancia hepato-biliar sistemática**, con control seriado de bilirrubina, FA, GGT, GOT/GPT e INR durante la NP prolongada.
+
+2. **Identificación precoz de pacientes con riesgo de DHANP**, especialmente aquellos con mayor gravedad, sepsis, shock, fallo multiorgánico, cirugía abdominal o exposición prolongada a NP.
+
+3. **Revisión del aporte calórico y lipídico**, evitando la sobrealimentación y ajustando la carga lipídica a la situación metabólica del paciente.
+
+4. **Mantenimiento de nutrición enteral mínima siempre que sea posible**, como estrategia potencialmente protectora frente a colestasis y complicaciones asociadas a NP exclusiva.
+
+5. **Integración del IQ12 con los indicadores de monitorización**, ya que la detección precoz de DHANP depende de una adecuada trazabilidad analítica, nutricional y clínica.
+
+En síntesis, el IQ12 muestra una **señal de seguridad desfavorable**: casi la mitad de los pacientes evaluables desarrollaron una nueva alteración hepática compatible con DHANP al séptimo día de NP prolongada. El resultado no prueba causalidad directa, pero sí justifica reforzar la prevención, monitorización y ajuste individualizado de la nutrición parenteral.
+
