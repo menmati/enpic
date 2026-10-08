@@ -1,0 +1,500 @@
+---
+title: "Indicador 7: Uso Adecuado de Nutrición Parenteral Total (NPT)"
+author: "Carmen Macías Portillo"
+date: "`r Sys.Date()`"
+output: 
+  prettydoc::html_pretty:
+    theme: tactile
+    toc: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+```{r}
+# Cargamos la librería 'haven', necesaria para cargar archivos .sav (SPSS)
+library(haven)
+# Cargamos el archivo .sav
+enpic <- read_sav("ENPIC_BMI_525.sav")
+```
+
+## **Indicador de Calidad 7** (**IQ7**): Uso adecuado de nutrición parenteral total (NPT)
+
+Para evaluar el uso adecuado de nutrición parenteral total en la unidad, el indicador se ha operativizado bajo los siguientes criterios técnicos:
+
+- **Población diana** ($N$): Para la operacionalización del IQ7, se consideraron como población diana los pacientes de la cohorte ENPIC que recibieron nutrición parenteral durante su estancia en UCI, identificados mediante la presencia de una fecha válida en la variable `Inicio_NPT`.
+
+- **Casos favorables** ($n$): El numerador se definió como el número de pacientes con NPT en los que constaba una justificación documental de la indicación. Se consideró evidencia de indicación registrada la presencia de información válida en al menos una de las siguientes variables: `INDICA_NTP`, `Causa_ReposoIntestinal` o `INDICA_NTP_PocoAporte`.
+
+La proporción de cumplimiento se calculó como el cociente entre los pacientes con NPT e indicación documentada y el total de pacientes que recibieron NPT.
+
+$$IQ7 = \left( \frac{\text{Nº de enfermos con NPT e indicación documentada}}{\text{Nº total de enfermos que recibieron NPT}} \right) \times 100$$
+
+Para cuantificar la precisión de la estimación se calculó el intervalo de confianza binomial al 95%.
+
+```{r}
+# 1. Denominador: Pacientes que recibieron NPT (tienen fecha de Inicio_NPT)
+pacientes_NPT <- subset(enpic, !is.na(Inicio_NPT))
+Denominador_IQ7 <- nrow(pacientes_NPT)
+
+# 2. Numerador: Pacientes con indicación correcta justificada
+# Usamos el operador '|' (OR) para comprobar si AL MENOS UNA de las columnas tiene datos
+Numerador_IQ7 <- sum((!is.na(pacientes_NPT$INDICA_NTP)) | (!is.na(pacientes_NPT$Causa_ReposoIntestinal)) | (!is.na(pacientes_NPT$INDICA_NTP_PocoAporte)), na.rm = TRUE)
+
+# 3. Cálculo del indicador (porcentaje)
+IQ7 <- (Numerador_IQ7 / Denominador_IQ7) * 100
+
+# 4. Estadísticas: Intervalos de confianza al 95%
+test_IQ7 <- prop.test(Numerador_IQ7, Denominador_IQ7, conf.level = 0.95)
+IC_Inf_IQ7 <- round(test_IQ7$conf.int[1] * 100, 2)
+IC_Sup_IQ7 <- round(test_IQ7$conf.int[2] * 100, 2)
+
+# 5. Imprimimos los resultados
+print(paste("Número de enfermos con NPT con indicación correcta:", Numerador_IQ7)); print(paste("Número de enfermos con NPT:", Denominador_IQ7)); print(paste("El", round(IQ7, 2), "% de los pacientes con NPT fueron evaluados de manera correcta para su prescripción con un intervalo de confianza del 95% de [", IC_Inf_IQ7, "% -", IC_Sup_IQ7, "%]"))
+
+# 6. Gráfico
+library(ggplot2)
+
+# Base para el gráfico
+grafico_iq7 <- data.frame(Indicador = "IQ7", Cumplimiento = IQ7, IC_inf = IC_Inf_IQ7, IC_sup = IC_Sup_IQ7, Estandar = 90, Numerador = Numerador_IQ7, Denominador = Denominador_IQ7)
+
+ggplot(grafico_iq7, aes(x = Indicador, y = Cumplimiento)) +
+  # Barra vertical hasta el punto
+  geom_segment(aes(x = Indicador, xend = Indicador, y = 0, yend = Cumplimiento), linewidth = 10, colour = "#4C78A8", alpha = 0.65) +
+  # Línea del estándar
+  geom_hline(yintercept = 90, linetype = "dashed", linewidth = 0.9, colour = "firebrick") +
+  # IC95%
+  geom_errorbar(aes(ymin = IC_inf, ymax = IC_sup), width = 0.08, linewidth = 1.1, colour = "black") +
+  # Punto central
+  geom_point(size = 5, colour = "#2F5AA8") +
+  # Texto principal encima del punto
+  geom_text(aes(label = paste0(round(Cumplimiento, 1), "%\n", "IC95%: ", IC_inf, " - ", IC_sup, "%\n", Numerador, "/", Denominador, " pacientes")), vjust = -2.2, size = 4.4) +
+  # Etiqueta del estándar más separada de la línea
+  annotate("text", x = 1.18, y = 92.5, label = "Estándar ≥90%", hjust = 0, size = 4.3, colour = "firebrick") +
+  scale_y_continuous(limits = c(0, 108), breaks = seq(0, 100, 10), labels = function(x) paste0(x, "%")) +
+  labs(title = "Indicador IQ7:\nUso adecuado de nutrición parenteral total", subtitle = "Pacientes con NPT y justificación documental registrada", x = NULL, y = "Cumplimiento del indicador") +
+  theme_minimal(base_size = 14) +
+  theme(plot.title = element_text(face = "bold", size = 20, hjust = 0), plot.subtitle = element_text(size = 15), axis.title.y = element_text(size = 18), axis.text.x = element_text(size = 16, face = "bold"), axis.text.y = element_text(size = 14), panel.grid.minor = element_blank(), plot.margin = margin(15, 40, 15, 15))
+```
+
+El IQ7 alcanzó una tasa de cumplimiento del **`r round(IQ7, 1)`%**, correspondiente a **`r Numerador_IQ7` pacientes** con NPT e indicación documentada sobre un total de **`r Denominador_IQ7` pacientes** que recibieron nutrición parenteral. El intervalo de confianza binomial al 95% fue de **[`r IC_Inf_IQ7`% - `r IC_Sup_IQ7`%]**.
+
+Dado que el estándar definido para este indicador es ≥90%, el resultado se sitúa por debajo del nivel de calidad esperado. En concreto, **`r Denominador_IQ7 - Numerador_IQ7` pacientes** que recibieron NPT no presentaban una justificación documental registrada en las variables analizadas, lo que representa el **`r round(((Denominador_IQ7 - Numerador_IQ7) / Denominador_IQ7) * 100, 1)`%** de los pacientes tratados con NPT.
+
+La interpretación principal es que existe un margen de mejora en la documentación de la indicación de la NPT. Este incumplimiento puede reflejar una indicación clínica no suficientemente justificada en el registro asistencial o, alternativamente, una cumplimentación incompleta de los motivos clínicos que llevaron a su prescripción. Por tanto, el resultado debe interpretarse principalmente como un déficit de trazabilidad documental de la indicación, sin asumir de forma automática que todos los casos no documentados correspondan a una prescripción clínicamente inadecuada.
+
+### **Análisis univariante**
+
+Se comparan las características clínicas, nutricionales, terapéuticas y evolutivas entre dos grupos:
+
+- **NPT justificada**: 148/195 (**75,9%**).
+
+- **NPT no justificada**: 47/195 (**24,1%**).
+
+Para llevar a cabo esta comparativa, se emplean los siguientes métodos:
+
+- **Variables continuas**: Se emplean pruebas no paramétricas de **Mann-Whitney** para datos que siguen una distribución asimétrica, presentando los datos mediante mediana y rango intercuartílico, y la prueba **t de Student** para datos que siguen una distribución normal, presentando los datos como media ± desviación estándar.
+
+- **Variables categóricas**: Se utiliza la prueba de **chi-cuadrado**, o el **test exacto de Fisher** cuando existen frecuencias esperadas bajas.
+
+Finalmente, se formatean los valores de *p*, destacando visualmente los resultados estadísticamente significativos y las asociaciones con tendencia, y se genera una tabla comparativa final entre ambos grupos.
+
+```{r}
+library(dplyr); library(tidyr); library(knitr)
+
+# 0. Función auxiliar para detectar registros documentales válidos
+registro_valido <- function(x) { x_chr <- trimws(as.character(x)); !is.na(x) & x_chr != "" & !tolower(x_chr) %in% c("no", "0", "0.00", "0,00", "na", "nan") }
+
+# 1. Base del IQ7: pacientes que recibieron NPT
+pacientes_NPT_iq7 <- enpic %>% filter(!is.na(Inicio_NPT)) %>% mutate(NPT_justificada = registro_valido(INDICA_NTP) | registro_valido(Causa_ReposoIntestinal) | registro_valido(INDICA_NTP_PocoAporte), Grupo_IQ7_NPT = factor(case_when(NPT_justificada == TRUE ~ "NPT justificada", NPT_justificada == FALSE ~ "NPT no justificada", TRUE ~ NA_character_), levels = c("NPT justificada", "NPT no justificada")))
+
+# 2. Tamaño de grupos para encabezados
+n_total_iq7 <- nrow(pacientes_NPT_iq7)
+resumen_grupos_iq7 <- pacientes_NPT_iq7 %>% count(Grupo_IQ7_NPT) %>% mutate(pct = n / sum(n) * 100, encabezado = paste0(Grupo_IQ7_NPT, "\n(", sprintf("%.1f", pct), "%, n = ", n, " pac.)"))
+col_justificada <- resumen_grupos_iq7 %>% filter(Grupo_IQ7_NPT == "NPT justificada") %>% pull(encabezado)
+col_no_justificada <- resumen_grupos_iq7 %>% filter(Grupo_IQ7_NPT == "NPT no justificada") %>% pull(encabezado)
+formatear_p <- function(p) ifelse(is.na(p), "-", ifelse(p < 0.001, "<0.001", as.character(round(p, 3))))
+
+# 3. Funciones para tabla univariante
+# 3.1. Variables asimétricas: Mediana [Q1-Q3] + Mann-Whitney
+crear_fila_mw_iq7 <- function(data, var, nom) {
+  d <- data %>% filter(!is.na(.data[[var]]), !is.na(Grupo_IQ7_NPT))
+  if (n_distinct(d$Grupo_IQ7_NPT) < 2) return(data.frame(Variable = nom, p = "-"))
+  t <- d %>% group_by(Grupo_IQ7_NPT) %>% summarise(v = sprintf("%.1f [%.1f - %.1f]", median(.data[[var]], na.rm = TRUE), quantile(.data[[var]], 0.25, na.rm = TRUE), quantile(.data[[var]], 0.75, na.rm = TRUE)), .groups = "drop") %>% pivot_wider(names_from = Grupo_IQ7_NPT, values_from = v)
+  p <- tryCatch(wilcox.test(as.formula(paste(var, "~ Grupo_IQ7_NPT")), data = d)$p.value, error = function(e) NA_real_)
+  t %>% mutate(Variable = nom, p = formatear_p(p)) %>% select(Variable, everything())}
+
+# 3.2. Variables normales: Media ± DE + t-test
+crear_fila_ttest_iq7 <- function(data, var, nom) {
+  d <- data %>% filter(!is.na(.data[[var]]), !is.na(Grupo_IQ7_NPT))
+  if (n_distinct(d$Grupo_IQ7_NPT) < 2) return(data.frame(Variable = nom, p = "-"))
+  t <- d %>% group_by(Grupo_IQ7_NPT) %>% summarise(v = sprintf("%.1f ± %.1f", mean(.data[[var]], na.rm = TRUE), sd(.data[[var]], na.rm = TRUE)), .groups = "drop") %>% pivot_wider(names_from = Grupo_IQ7_NPT, values_from = v)
+  p <- tryCatch(t.test(as.formula(paste(var, "~ Grupo_IQ7_NPT")), data = d)$p.value, error = function(e) NA_real_)
+  t %>% mutate(Variable = nom, p = formatear_p(p)) %>% select(Variable, everything())}
+
+# 3.3. Variables categóricas con varias categorías
+crear_fila_chi_iq7 <- function(data, var, nom, niveles, etiquetas) {
+  d <- data %>% filter(!is.na(.data[[var]]), !is.na(Grupo_IQ7_NPT)) %>% mutate(vc = factor(.data[[var]], levels = niveles, labels = etiquetas)) %>% filter(!is.na(vc))
+  if (nrow(d) == 0 || n_distinct(d$Grupo_IQ7_NPT) < 2 || n_distinct(d$vc) < 2) return(data.frame(Variable = paste0(nom, ": sin datos suficientes"), p = "-"))
+  tabla_test <- table(d$vc, d$Grupo_IQ7_NPT); p <- tryCatch(if (any(tabla_test < 5)) fisher.test(tabla_test)$p.value else chisq.test(tabla_test)$p.value, error = function(e) NA_real_)
+  t <- d %>% count(Grupo_IQ7_NPT, vc) %>% group_by(Grupo_IQ7_NPT) %>% mutate(v = sprintf("%d (%.1f%%)", n, n / sum(n) * 100)) %>% select(-n) %>% pivot_wider(names_from = Grupo_IQ7_NPT, values_from = v)
+  t %>% mutate(Variable = paste0(nom, ": ", vc), p = ifelse(row_number() == 1, formatear_p(p), "")) %>% select(-vc) %>% select(Variable, everything())}
+
+# 3.4. Variables categóricas Sí/No mostrando solo "Sí"
+crear_fila_chi_si_iq7 <- function(data, var, nom, niveles, etiquetas, categoria_mostrar = "Sí") {
+  d <- data %>% filter(!is.na(.data[[var]]), !is.na(Grupo_IQ7_NPT)) %>% mutate(vc = factor(.data[[var]], levels = niveles, labels = etiquetas)) %>% filter(!is.na(vc))
+  if (nrow(d) == 0 || n_distinct(d$Grupo_IQ7_NPT) < 2 || n_distinct(d$vc) < 2) return(data.frame(Variable = paste0(nom, ": ", categoria_mostrar), p = "-"))
+  tabla_test <- table(d$vc, d$Grupo_IQ7_NPT); p <- tryCatch(if (any(tabla_test < 5)) fisher.test(tabla_test)$p.value else chisq.test(tabla_test)$p.value, error = function(e) NA_real_)
+  d %>% count(Grupo_IQ7_NPT, vc) %>% group_by(Grupo_IQ7_NPT) %>% mutate(v = sprintf("%d (%.1f%%)", n, n / sum(n) * 100)) %>% filter(vc == categoria_mostrar) %>% select(-n, -vc) %>% pivot_wider(names_from = Grupo_IQ7_NPT, values_from = v) %>% mutate(Variable = paste0(nom, ": ", categoria_mostrar), p = formatear_p(p)) %>% select(Variable, everything())}
+
+# 4. Tabla final univariante IQ7
+tabla_univariante_iq7 <- bind_rows(
+  # Características basales y gravedad
+  crear_fila_mw_iq7(pacientes_NPT_iq7, "EDAD", "Edad, años"),
+  crear_fila_mw_iq7(pacientes_NPT_iq7, "BMI", "BMI, kg/m²"),
+  crear_fila_ttest_iq7(pacientes_NPT_iq7, "APACHEII", "APACHE II"),
+  crear_fila_ttest_iq7(pacientes_NPT_iq7, "SAPSII", "SAPS II"),
+  crear_fila_mw_iq7(pacientes_NPT_iq7, "SOFA1", "SOFA admisión"),
+  crear_fila_mw_iq7(pacientes_NPT_iq7, "NUTRIC_Score", "NUTRIC Score"),
+  crear_fila_chi_iq7(pacientes_NPT_iq7, "SEXO", "Sexo", niveles = c(1, 2), etiquetas = c("Hombre", "Mujer")),
+  
+  # Antecedentes
+  crear_fila_chi_si_iq7(pacientes_NPT_iq7, "AHTA", "Antecedentes hipertensión", niveles = c(0, 1), etiquetas = c("No", "Sí")),
+  crear_fila_chi_si_iq7(pacientes_NPT_iq7, "ADBTM", "Antecedentes diabetes mellitus", niveles = c(0, 1), etiquetas = c("No", "Sí")),
+  crear_fila_chi_si_iq7(pacientes_NPT_iq7, "AEPOC", "Antecedentes EPOC", niveles = c(0, 1), etiquetas = c("No", "Sí")),
+  crear_fila_chi_si_iq7(pacientes_NPT_iq7, "ACARDIOP", "Antecedentes IAM/cardiopatía", niveles = c(0, 1), etiquetas = c("No", "Sí")),
+  crear_fila_chi_si_iq7(pacientes_NPT_iq7, "ACIRROSIS", "Enfermedad hepática crónica", niveles = c(0, 1), etiquetas = c("No", "Sí")),
+  crear_fila_chi_si_iq7(pacientes_NPT_iq7, "AIRC", "Fallo renal crónico", niveles = c(0, 1), etiquetas = c("No", "Sí")),
+  crear_fila_chi_si_iq7(pacientes_NPT_iq7, "AINMUNO", "Antecedentes inmunosupresión", niveles = c(0, 1), etiquetas = c("No", "Sí")),
+  crear_fila_chi_si_iq7(pacientes_NPT_iq7, "ANEOPLAS", "Antecedentes neoplasia", niveles = c(0, 1), etiquetas = c("No", "Sí")),
+  
+  # Perfil clínico-nutricional
+  crear_fila_chi_iq7(pacientes_NPT_iq7, "STATUS3", "Tipo de paciente", niveles = c(0, 1, 2), etiquetas = c("Quirúrgico", "Médico", "Trauma")),
+  crear_fila_chi_si_iq7(pacientes_NPT_iq7, "VGSING2", "Paciente con RN basado en VGS", niveles = c(1, 2), etiquetas = c("No", "Sí")),
+  crear_fila_chi_si_iq7(pacientes_NPT_iq7, "NUTRISCOR2", "Paciente con RN basado en NUTRIC Score", niveles = c(0, 1), etiquetas = c("No", "Sí")),
+  crear_fila_mw_iq7(pacientes_NPT_iq7, "HORASIN", "Horas hasta inicio de soporte nutricional"),
+  crear_fila_mw_iq7(pacientes_NPT_iq7, "TOTAL_DIAS_SN", "Días en terapia nutricional"),
+  crear_fila_ttest_iq7(pacientes_NPT_iq7, "Kcal_14d", "Media kcal/kg/día"),
+  crear_fila_ttest_iq7(pacientes_NPT_iq7, "gPROT_14d", "Media g proteína/kg/día"),
+  
+  # Tipo global de soporte nutricional
+  crear_fila_chi_iq7(pacientes_NPT_iq7, "TIPO_SN_Grupo", "Tipo de soporte nutricional", niveles = c(1, 2, 3, 4), etiquetas = c("NE", "NPT", "NE - NPT", "NPT - NE")),
+  
+  # Variables específicas de NPT
+  crear_fila_chi_iq7(pacientes_NPT_iq7, "TIPO_NPT", "Tipo de NPT", niveles = c(1, 2), etiquetas = c("Parenteral total", "Parenteral complementaria")),
+  crear_fila_chi_iq7(pacientes_NPT_iq7, "VIA_NPT", "Vía de administración de NPT", niveles = c(1, 2, 3), etiquetas = c("Vía periférica", "Vía central", "PICC")),
+  crear_fila_mw_iq7(pacientes_NPT_iq7, "TOTALNPT22", "Días de NPT"),
+  crear_fila_chi_iq7(pacientes_NPT_iq7, "SUPRE_NPT", "Motivo de suspensión de NPT", niveles = c(1, 2, 3, 4, 5, 6, 7), etiquetas = c("Paso a NE", "Paso a nutrición oral", "Complicación NP", "Alta UCI", "Situación terminal", "Exitus", "Finalización estudio")),
+  
+  # Complicaciones digestivas y clínicas
+  crear_fila_chi_si_iq7(pacientes_NPT_iq7, "ANY_COMPLICATION", "Cualquier complicación", niveles = c(0, 1), etiquetas = c("No", "Sí")),
+  crear_fila_chi_si_iq7(pacientes_NPT_iq7, "PVRGM100", "Volumen de residuo gástrico alto (>500 mL)", niveles = c(0, 1), etiquetas = c("No", "Sí")),
+  crear_fila_chi_si_iq7(pacientes_NPT_iq7, "PDANE", "Diarrea", niveles = c(0, 1), etiquetas = c("No", "Sí")),
+  crear_fila_chi_si_iq7(pacientes_NPT_iq7, "PVOMITO", "Vómitos", niveles = c(0, 1), etiquetas = c("No", "Sí")),
+  crear_fila_chi_si_iq7(pacientes_NPT_iq7, "PBRONCOAS", "Broncoaspiración", niveles = c(0, 1), etiquetas = c("No", "Sí")),
+  crear_fila_chi_si_iq7(pacientes_NPT_iq7, "PISQUINT", "Isquemia mesentérica", niveles = c(0, 1), etiquetas = c("No", "Sí")),
+  
+  # Soporte y outcomes
+  crear_fila_chi_si_iq7(pacientes_NPT_iq7, "VM", "Pacientes con ventilación mecánica", niveles = c(0, 1), etiquetas = c("No", "Sí")),
+  crear_fila_mw_iq7(pacientes_NPT_iq7, "DIASVM", "Días de ventilación mecánica"),
+  crear_fila_chi_si_iq7(pacientes_NPT_iq7, "NEC_NA", "Necesidad de noradrenalina", niveles = c(0, 1), etiquetas = c("No", "Sí")),
+  crear_fila_chi_si_iq7(pacientes_NPT_iq7, "TRR", "Necesidad de TRR", niveles = c(0, 1), etiquetas = c("No", "Sí")),
+  crear_fila_chi_si_iq7(pacientes_NPT_iq7, "INFRESP", "Infección del tracto respiratorio", niveles = c(0, 1), etiquetas = c("No", "Sí")),
+  crear_fila_chi_si_iq7(pacientes_NPT_iq7, "INFVIA", "Infección relacionada con el catéter", niveles = c(0, 1), etiquetas = c("No", "Sí")),
+  
+  # Laboratorio, estancia y mortalidad
+  crear_fila_chi_si_iq7(pacientes_NPT_iq7, "HYPER_UREA", "Hiperuremia", niveles = c(0, 1), etiquetas = c("No", "Sí")),
+  crear_fila_chi_si_iq7(pacientes_NPT_iq7, "HYPER_TRIGLI", "Hipertrigliceridemia", niveles = c(0, 1), etiquetas = c("No", "Sí")),
+  crear_fila_chi_si_iq7(pacientes_NPT_iq7, "LIVER_DYSFUNCTION", "Disfunción hepática", niveles = c(0, 1), etiquetas = c("No", "Sí")),
+  crear_fila_chi_si_iq7(pacientes_NPT_iq7, "CHOLESTASIS", "Colestasis", niveles = c(0, 1), etiquetas = c("No", "Sí")),
+  crear_fila_chi_si_iq7(pacientes_NPT_iq7, "MIXED_PATTERN", "Patrón mixto hepático", niveles = c(0, 1), etiquetas = c("No", "Sí")),
+  crear_fila_mw_iq7(pacientes_NPT_iq7, "DIAS_UCI", "Días en UCI"),
+  crear_fila_mw_iq7(pacientes_NPT_iq7, "DIAS_HOSP", "Días de hospitalización"),
+  crear_fila_chi_si_iq7(pacientes_NPT_iq7, "MUERTO28", "Mortalidad a 28 días", niveles = c(0, 1), etiquetas = c("No", "Sí"))
+)
+
+# 8. Limpieza, formato de p-valores y renderizado de la tabla
+tabla_univariante_iq7[is.na(tabla_univariante_iq7)] <- "-"
+tabla_univariante_iq7 %>% mutate(p_num = suppressWarnings(as.numeric(ifelse(p == "<0.001", "0.0009", p))), p = case_when(!is.na(p_num) & p_num <= 0.05 ~ paste0("<b><u>", p, "</u></b>"), !is.na(p_num) & p_num <= 0.10 ~ paste0("<b>", p, "</b>"), TRUE ~ p)) %>% select(-p_num) %>% rename(!!col_justificada := `NPT justificada`, !!col_no_justificada := `NPT no justificada`) %>% knitr::kable(format = "html", escape = FALSE, caption = "Características clínicas, nutricionales y outcomes según justificación documental de la NPT")
+```
+
+
+En el análisis comparativo, los grupos fueron **globalmente similares en edad, gravedad basal y comorbilidad**. No se observaron diferencias significativas en las escalas principales: *APACHE II*: 20,4 ± 7,8 vs. 20,0 ± 8,2 (*p = 0,813*); *SAPS II*: 49,0 ± 18,0 vs. 49,8 ± 16,4 (*p = 0,795*); *SOFA al ingreso*: 7,0 [4,0–10,0] vs. 7,0 [4,5–9,0] (*p = 0,919*); y *NUTRIC Score*: 4,0 [3,0–6,0] vs. 5,0 [3,8–6,0] (*p = 0,288*)
+
+Las diferencias clave se concentraron en variables relacionadas con el perfil nutricional y la duración temporal del soporte. Los pacientes con **NPT justificada** presentaron: **mayor BMI**: 27,7 [24,0–30,8] frente a 24,7 [22,9–29,0] kg/m² (**p = 0,006**); **mayor duración total del soporte nutricional**: 12,0 [7,0–24,2] frente a 8,0 [5,0–12,0] días (**p = 0,003**); **mayor duración de la NPT**: 7,0 [4,0–13,0] frente a 5,0 [3,0–7,5] días (**p = 0,002**); y **mayor estancia hospitalaria**: 34,0 [20,0–60,2] frente a 26,5 [15,0–39,0] días (**p = 0,025**).
+
+Aunque no alcanzaron la significación estadística convencional (*p < 0,05*), se identificaron tres tendencias clínicas de interés: **riesgo nutricional** (**VGS**): Mayor proporción de pacientes en riesgo dentro del grupo con NPT justificada (59,2% vs. 42,6%; *p = 0,068*); **infección relacionada con catéter**: Más frecuente en el grupo sin justificación documental (12,8% vs. 4,1%; *p = 0,069*); e **inicio del soporte nutricional**: Tendió a ser más precoz en los pacientes sin justificación documentada (24,4 [13,1–39,0] vs. 30,0 [17,4–58,8] horas; *p = 0,089*).
+
+No hubo diferencias estadísticamente significativas en la **mortalidad a 28 días** (25,7% vs. 29,8%; *p = 0,714*). Tampoco se apreciaron diferencias en el tipo de soporte nutricional, la vía de administración de la NPT, las complicaciones digestivas, la necesidad de ventilación mecánica, el uso de noradrenalina, la TRR ni en las infecciones respiratorias.
+
+En conjunto, la ausencia de justificación documental de la NPT **no parece asociarse a una mayor gravedad inicial ni a una peor mortalidad**, sino más bien a episodios de nutrición parenteral de menor duración y menor trazabilidad en pacientes con una exposición temporal más corta al soporte nutricional global.
+
+### **Análisis multivariante**
+#### **Regresión logística binaria multivariable**
+
+Se realizó una regresión logística binaria multivariable tomando como variable dependiente la ausencia de justificación documental de la NPT, codificada como evento frente a la NPT justificada. Como variables candidatas se incluyeron aquellas que habían mostrado asociación significativa o tendencia en el análisis univariante —p < 0,10—: BMI, riesgo nutricional por VGS, horas hasta inicio del soporte nutricional, duración total del soporte nutricional, días de NPT, infección relacionada con catéter y días de hospitalización. Se exploraron de forma sistemática combinaciones de 2 a 6 variables, comparando los modelos según AIC, AUC, número de predictores significativos y parsimonia. El modelo final fue seleccionado mediante un ranking combinado que integró menor AIC, mayor AUC y número de variables incluidas.
+
+```{r multivariable analysis IQ7}
+library(dplyr); library(tidyr); library(broom); library(pROC); library(purrr); library(knitr)
+
+# 1. Preparación de datos
+# Variable dependiente: 0 = NPT justificada / 1 = NPT no justificada
+datos_modelos_iq7 <- pacientes_NPT_iq7 %>% mutate(Grupo_IQ7_Modelo = factor(case_when(Grupo_IQ7_NPT == "NPT justificada" ~ "Justificada", Grupo_IQ7_NPT == "NPT no justificada" ~ "No justificada", TRUE ~ NA_character_), levels = c("Justificada", "No justificada")), VGSING2_iq7 = factor(case_when(VGSING2 == 1 ~ "No", VGSING2 == 2 ~ "Si", TRUE ~ NA_character_), levels = c("No", "Si")), INFVIA_iq7 = factor(case_when(INFVIA == 0 ~ "No", INFVIA == 1 ~ "Si", TRUE ~ NA_character_), levels = c("No", "Si"))) %>% drop_na(Grupo_IQ7_Modelo)
+
+# 2. Variables candidatas: variables con p < 0,10 en el univariante
+variables_candidatas_iq7 <- c("BMI", "VGSING2_iq7", "HORASIN", "TOTAL_DIAS_SN", "TOTALNPT22", "INFVIA_iq7", "DIAS_HOSP")
+
+# 3. Función para evaluar modelos logísticos binarios
+evaluar_modelo_iq7 <- function(vars, data) {tryCatch({
+    d_mod <- data %>% select(all_of(c("Grupo_IQ7_Modelo", vars))) %>% drop_na()
+    if (nrow(d_mod) < 80 || length(unique(d_mod$Grupo_IQ7_Modelo)) < 2) return(NULL)
+    mod <- glm(as.formula(paste("Grupo_IQ7_Modelo ~", paste(vars, collapse = " + "))), data = d_mod, family = binomial)
+    p_vals <- tidy(mod) %>% filter(term != "(Intercept)")
+    roc_obj <- roc(response = d_mod$Grupo_IQ7_Modelo, predictor = predict(mod, type = "response"), levels = c("Justificada", "No justificada"), direction = "<", quiet = TRUE)
+    data.frame(Variables = paste(vars, collapse = " + "), Num_variables = length(vars), N_modelo = nrow(d_mod), AIC = AIC(mod), AUC = as.numeric(auc(roc_obj)), N_significativas = sum(p_vals$p.value <= 0.05, na.rm = TRUE), N_tendencia = sum(p_vals$p.value <= 0.20, na.rm = TRUE))
+  }, error = function(e) NULL)}
+
+# 4. Combinaciones de variables
+# Se exploran modelos de 2 a 6 variables para evitar modelos excesivamente saturados
+combinaciones_iq7 <- unlist(lapply(2:min(6, length(variables_candidatas_iq7)), function(k) combn(variables_candidatas_iq7, k, simplify = FALSE)), recursive = FALSE)
+
+# 5. Evaluación masiva de modelos
+resultados_modelos_iq7 <- map_dfr(combinaciones_iq7, evaluar_modelo_iq7, data = datos_modelos_iq7)
+
+# 6. Top 15 modelos por menor AIC
+resultados_modelos_iq7 %>% arrange(AIC) %>% slice(1:15) %>% kable(digits = 3, caption = "Top 15 modelos IQ7 por menor AIC")
+
+# 7. Top 15 modelos por mayor AUC
+resultados_modelos_iq7 %>% arrange(desc(AUC)) %>% slice(1:15) %>% kable(digits = 3, caption = "Top 15 modelos IQ7 por mayor AUC")
+
+# 8. Ranking equilibrado: AIC + AUC + parsimonia
+mejores_eq_iq7 <- resultados_modelos_iq7 %>% mutate(rank_comb = rank(AIC) + rank(-AUC) + Num_variables) %>% arrange(rank_comb) %>% slice(1:15)
+kable(mejores_eq_iq7, digits = 3, caption = "Top 15 modelos IQ7: equilibrio AIC, AUC y parsimonia")
+
+# 9. Ajuste del modelo final
+mejor_formula_iq7 <- mejores_eq_iq7$Variables[1]
+modelo_final_iq7 <- glm(as.formula(paste("Grupo_IQ7_Modelo ~", mejor_formula_iq7)), data = datos_modelos_iq7, family = binomial)
+
+# 10. Tabla de resultados del modelo final
+# IC95% tipo Wald para evitar problemas de convergencia con confint perfilado
+tabla_modelo_final_iq7 <- tidy(modelo_final_iq7) %>% filter(term != "(Intercept)") %>% mutate(OR = exp(estimate), IC_inf = exp(estimate - 1.96 * std.error), IC_sup = exp(estimate + 1.96 * std.error), p = ifelse(p.value < 0.001, "<0.001", sprintf("%.3f", p.value)), OR_IC95 = sprintf("%.2f [%.2f - %.2f]", OR, IC_inf, IC_sup), Variable = case_when(term == "BMI" ~ "BMI, kg/m²", term == "VGSING2_iq7Si" ~ "Riesgo nutricional por VGS: sí vs no", term == "HORASIN" ~ "Horas hasta inicio de soporte nutricional", term == "TOTAL_DIAS_SN" ~ "Días en terapia nutricional", term == "TOTALNPT22" ~ "Días de NPT", term == "INFVIA_iq7Si" ~ "Infección relacionada con catéter: sí vs no", term == "DIAS_HOSP" ~ "Días de hospitalización", TRUE ~ term), Comparacion = "NPT no justificada vs NPT justificada") %>% select(Comparacion, Variable, OR_IC95, p)
+kable(tabla_modelo_final_iq7, caption = "Modelo final de factores asociados a ausencia de justificación documental de la NPT")
+
+# 11. Métricas del modelo final
+mejores_eq_iq7 %>% slice(1) %>% select(Variables, Num_variables, N_modelo, AIC, AUC, N_significativas, N_tendencia) %>% kable(digits = 3, caption = "Métricas del modelo final IQ7")
+
+# 12. Curva ROC del modelo final IQ7
+datos_roc_iq7 <- datos_modelos_iq7 %>% select(all_of(c("Grupo_IQ7_Modelo", unlist(strsplit(mejor_formula_iq7, " \\+ "))))) %>% drop_na()
+datos_roc_iq7$prob_no_justificada <- predict(modelo_final_iq7, newdata = datos_roc_iq7, type = "response")
+roc_final_iq7 <- roc(response = datos_roc_iq7$Grupo_IQ7_Modelo, predictor = datos_roc_iq7$prob_no_justificada, levels = c("Justificada", "No justificada"), direction = "<", quiet = TRUE)
+auc_final_iq7 <- as.numeric(auc(roc_final_iq7))
+```
+
+En el modelo multivariable, un **mayor BMI** se asoció de forma independiente con **menor probabilidad de ausencia de justificación documental de la NPT** —**OR 0,89**; IC95% 0,81–0,97; **p = 0,007**—, lo que indica que, por cada incremento de 1 kg/m² en el BMI, la odds de pertenecer al grupo de NPT no justificada disminuyó aproximadamente un 11%. De forma similar, presentar **riesgo nutricional según VGS** se asoció con una **reducción marcada de la probabilidad de NPT no justificada** —**OR 0,28**; IC95% 0,12–0,62; **p = 0,002**—, compatible con una mayor trazabilidad documental en pacientes con peor perfil nutricional clínicamente reconocido. La **duración de la NPT** también mantuvo una **asociación inversa** significativa —**OR 0,94**; IC95% 0,89–1,00; **p = 0,046**—, sugiriendo que los tratamientos parenterales más prolongados tienden a estar mejor documentados. La **infección relacionada con catéter** mostró una **asociación positiva con la ausencia de justificación documental** —**OR 3,36**; IC95% 0,86–13,04; **p = 0,080**—, aunque únicamente como tendencia estadística y con un intervalo de confianza amplio, por lo que debe interpretarse con cautela. Las horas hasta el inicio del soporte nutricional —OR 0,99; p = 0,167— y los días de hospitalización —OR 1,00; p = 0,554— no mantuvieron asociación independiente en el modelo ajustado. En conjunto, el modelo sugiere que la NPT no justificada documentalmente no se relaciona con mayor gravedad basal, sino con un patrón de menor reconocimiento nutricional, menor duración de la NPT y posible menor trazabilidad clínica del episodio.
+
+```{r}
+# 13. Gráfica ROC del modelo final IQ7
+library(ggplot2); library(dplyr);library(pROC)
+
+# Coordenadas de la curva ROC
+df_roc_iq7 <- coords(roc_final_iq7, x = "all", ret = c("specificity", "sensitivity"), transpose = FALSE) %>% as.data.frame() %>% mutate(FPR = 1 - specificity, TPR = sensitivity)
+
+# Gráfica ROC
+ggplot(df_roc_iq7, aes(x = FPR, y = TPR)) + geom_line(linewidth = 1.2, colour = "#2F5AA8") + geom_abline(intercept = 0, slope = 1, linetype = "dashed", colour = "grey50", linewidth = 0.9) + annotate("text", x = 0.65, y = 0.18, label = paste0("AUC = ", round(auc_final_iq7, 3)), size = 5, fontface = "bold") + scale_x_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.2), labels = scales::percent_format(accuracy = 1)) + scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.2), labels = scales::percent_format(accuracy = 1)) + labs(title = "Curva ROC del modelo multivariable IQ7", subtitle = "Predicción de ausencia de justificación documental de la NPT", x = "1 - Especificidad", y = "Sensibilidad") + theme_minimal(base_size = 14) + theme(plot.title = element_text(face = "bold", size = 18), plot.subtitle = element_text(size = 14), axis.title = element_text(size = 15), axis.text = element_text(size = 12), panel.grid.minor = element_blank())
+```
+
+La curva ROC del modelo multivariable final mostró un área bajo la curva de **0,761**, lo que indica una capacidad discriminativa moderada para diferenciar a los pacientes con NPT no justificada documentalmente frente a aquellos con NPT justificada. Este resultado sugiere que el modelo posee utilidad exploratoria para identificar perfiles asociados a menor trazabilidad documental de la indicación, aunque su rendimiento no alcanza un nivel suficiente para considerarse una herramienta predictiva clínica autónoma.
+
+#### **Regresión de Cox**
+
+Como análisis complementario exploratorio, se ajustó un modelo de Cox incorporando `DIAS_UCI` como dimensión temporal y considerando como evento la ausencia de justificación documental de la NPT.
+
+```{r cox multivariable analysis IQ7}
+library(dplyr); library(tidyr); library(broom); library(survival); library(pROC); library(purrr); library(knitr)
+
+# 1. Preparación de datos para Cox
+# Tiempo: DIAS_UCI
+# Evento: 0 = NPT justificada / 1 = NPT no justificada
+datos_cox_iq7 <- pacientes_NPT_iq7 %>% mutate(Evento_NPT_no_justificada = case_when(Grupo_IQ7_NPT == "NPT justificada" ~ 0, Grupo_IQ7_NPT == "NPT no justificada" ~ 1, TRUE ~ NA_real_), VGSING2_iq7 = factor(case_when(VGSING2 == 1 ~ "No", VGSING2 == 2 ~ "Si", TRUE ~ NA_character_), levels = c("No", "Si")), INFVIA_iq7 = factor(case_when(INFVIA == 0 ~ "No", INFVIA == 1 ~ "Si", TRUE ~ NA_character_), levels = c("No", "Si"))) %>% filter(!is.na(Evento_NPT_no_justificada), !is.na(DIAS_UCI), DIAS_UCI > 0)
+
+# 2. Variables candidatas: variables con p < 0,10 en el univariante
+variables_candidatas_cox_iq7 <- c("BMI", "VGSING2_iq7", "HORASIN", "TOTAL_DIAS_SN", "TOTALNPT22", "INFVIA_iq7", "DIAS_HOSP")
+
+# 3. Función para evaluar modelos Cox
+evaluar_cox_iq7 <- function(vars, data) {tryCatch({
+    d_mod <- data %>% select(all_of(c("DIAS_UCI", "Evento_NPT_no_justificada", vars))) %>% drop_na()
+    if (nrow(d_mod) < 80 || length(unique(d_mod$Evento_NPT_no_justificada)) < 2) return(NULL)
+    mod <- coxph(as.formula(paste("Surv(DIAS_UCI, Evento_NPT_no_justificada) ~", paste(vars, collapse = " + "))), data = d_mod)
+    p_vals <- tidy(mod)
+    # Score lineal del modelo Cox
+    score_cox <- predict(mod, type = "lp")
+    # ROC del score lineal para clasificar NPT no justificada
+    roc_obj <- roc(response = d_mod$Evento_NPT_no_justificada, predictor = score_cox, levels = c(0, 1), direction = "<", quiet = TRUE)
+    data.frame(Variables = paste(vars, collapse = " + "), Num_variables = length(vars), N_modelo = nrow(d_mod), Eventos = sum(d_mod$Evento_NPT_no_justificada == 1, na.rm = TRUE), AIC = AIC(mod), AUC = as.numeric(auc(roc_obj)), N_significativas = sum(p_vals$p.value <= 0.05, na.rm = TRUE), N_tendencia = sum(p_vals$p.value <= 0.20, na.rm = TRUE))}, error = function(e) NULL)}
+
+# 4. Combinaciones de variables
+# Se exploran modelos de 2 a 6 variables para evitar modelos excesivamente saturados
+combinaciones_cox_iq7 <- unlist(lapply(2:min(6, length(variables_candidatas_cox_iq7)), function(k) combn(variables_candidatas_cox_iq7, k, simplify = FALSE)), recursive = FALSE)
+
+# 5. Evaluación masiva de modelos Cox
+resultados_cox_iq7 <- map_dfr(combinaciones_cox_iq7, evaluar_cox_iq7, data = datos_cox_iq7)
+
+# 6. Top 15 modelos por menor AIC
+resultados_cox_iq7 %>% arrange(AIC) %>% slice(1:15) %>% kable(digits = 3, caption = "Top 15 modelos Cox IQ7 por menor AIC")
+
+# 7. Top 15 modelos por mayor AUC
+resultados_cox_iq7 %>% arrange(desc(AUC)) %>% slice(1:15) %>% kable(digits = 3, caption = "Top 15 modelos Cox IQ7 por mayor AUC")
+
+# 8. Ranking equilibrado: AIC + AUC + parsimonia
+mejores_eq_cox_iq7 <- resultados_cox_iq7 %>% mutate(rank_comb = rank(AIC) + rank(-AUC) + Num_variables) %>% arrange(rank_comb) %>% slice(1:15)
+kable(mejores_eq_cox_iq7, digits = 3, caption = "Top 15 modelos Cox IQ7: equilibrio AIC, AUC y parsimonia")
+
+# 9. Ajuste del modelo Cox final
+mejor_formula_cox_iq7 <- mejores_eq_cox_iq7$Variables[1]
+modelo_final_cox_iq7 <- coxph(as.formula(paste("Surv(DIAS_UCI, Evento_NPT_no_justificada) ~", mejor_formula_cox_iq7)), data = datos_cox_iq7)
+
+# 10. Tabla de resultados del modelo final
+tabla_modelo_final_cox_iq7 <- tidy(modelo_final_cox_iq7) %>% mutate(HR = exp(estimate), IC_inf = exp(estimate - 1.96 * std.error), IC_sup = exp(estimate + 1.96 * std.error), p = ifelse(p.value < 0.001, "<0.001", sprintf("%.3f", p.value)), HR_IC95 = sprintf("%.2f [%.2f - %.2f]", HR, IC_inf, IC_sup), Variable = case_when(term == "BMI" ~ "BMI, kg/m²", term == "VGSING2_iq7Si" ~ "Riesgo nutricional por VGS: sí vs no", term == "HORASIN" ~ "Horas hasta inicio de soporte nutricional", term == "TOTAL_DIAS_SN" ~ "Días en terapia nutricional", term == "TOTALNPT22" ~ "Días de NPT", term == "INFVIA_iq7Si" ~ "Infección relacionada con catéter: sí vs no", term == "DIAS_HOSP" ~ "Días de hospitalización", TRUE ~ term), Comparacion = "Evento: NPT no justificada") %>% select(Comparacion, Variable, HR_IC95, p)
+kable(tabla_modelo_final_cox_iq7, caption = "Modelo Cox final de factores asociados a NPT no justificada documentalmente")
+
+# 11. Métricas del modelo final
+mejores_eq_cox_iq7 %>% slice(1) %>% select(Variables, Num_variables, N_modelo, Eventos, AIC, AUC, N_significativas, N_tendencia) %>% kable(digits = 3, caption = "Métricas del modelo Cox final IQ7")
+
+# 12. Comprobación de proporcionalidad de riesgos
+ph_cox_iq7 <- cox.zph(modelo_final_cox_iq7)
+print(ph_cox_iq7)
+
+# 13. Curva ROC del score lineal del modelo Cox final
+datos_roc_cox_iq7 <- datos_cox_iq7 %>% select(all_of(c("DIAS_UCI", "Evento_NPT_no_justificada", unlist(strsplit(mejor_formula_cox_iq7, " \\+ "))))) %>% drop_na()
+datos_roc_cox_iq7$score_cox <- predict(modelo_final_cox_iq7, newdata = datos_roc_cox_iq7, type = "lp")
+roc_cox_iq7 <- roc(response = datos_roc_cox_iq7$Evento_NPT_no_justificada, predictor = datos_roc_cox_iq7$score_cox, levels = c(0, 1), direction = "<", quiet = TRUE)
+auc_cox_iq7 <- as.numeric(auc(roc_cox_iq7))
+
+# 14. Gráfica ROC del modelo Cox final IQ7
+library(ggplot2); library(dplyr); library(pROC)
+
+# Coordenadas de la curva ROC
+df_roc_cox_iq7 <- coords(roc_cox_iq7, x = "all", ret = c("specificity", "sensitivity"), transpose = FALSE) %>% as.data.frame() %>% mutate(FPR = 1 - specificity, TPR = sensitivity)
+
+# Gráfica ROC
+ggplot(df_roc_cox_iq7, aes(x = FPR, y = TPR)) + geom_line(linewidth = 1.2, colour = "#2F5AA8") + geom_abline(intercept = 0, slope = 1, linetype = "dashed", colour = "grey50", linewidth = 0.9) + annotate("text", x = 0.65, y = 0.18, label = paste0("AUC = ", round(auc_cox_iq7, 3)), size = 5, fontface = "bold") + scale_x_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.2), labels = scales::percent_format(accuracy = 1)) + scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.2), labels = scales::percent_format(accuracy = 1)) + labs(title = "Curva ROC del modelo de Cox IQ7", subtitle = "Clasificación de NPT no justificada mediante score lineal", x = "1 - Especificidad", y = "Sensibilidad") + theme_minimal(base_size = 14) + theme(plot.title = element_text(face = "bold", size = 18), plot.subtitle = element_text(size = 13), axis.title = element_text(size = 15), axis.text = element_text(size = 12), panel.grid.minor = element_blank())
+```
+
+El modelo Cox seleccionado por el ranking combinado incluyó **BMI, riesgo nutricional por VGS, horas hasta inicio del soporte nutricional, días en terapia nutricional, infección relacionada con catéter y días de hospitalización**, con **n = 185, 46 eventos, AIC = 318,017** y **AUC = 0,719**. Por tanto, su capacidad discriminativa fue moderada-baja, inferior a la observada previamente en la regresión logística binaria del IQ7 —AUC = 0,761—.
+
+En el modelo final, un mayor BMI se asoció con menor hazard del evento “NPT no justificada” —HR 0,90; IC95% 0,83–0,97; p = 0,007—. De forma similar, el riesgo nutricional por VGS se asoció con una reducción marcada del hazard de NPT no justificada —HR 0,29; IC95% 0,14–0,57; p < 0,001—. También se observaron asociaciones inversas para las horas hasta el inicio del soporte nutricional —HR 0,98; IC95% 0,97–0,99; p = 0,001— y para los días en terapia nutricional —HR 0,84; IC95% 0,79–0,90; p < 0,001—. En sentido contrario, la infección relacionada con catéter se asoció con mayor hazard de NPT no justificada —HR 2,76; IC95% 1,04–7,28; p = 0,041—, mientras que los días de hospitalización mostraron una asociación limítrofe —HR 0,98; IC95% 0,96–1,00; p = 0,060—.
+
+El resultado de `cox.zph()` obliga a ser prudente. Al incumplirse la proporcionalidad de riesgos, los HR de `TOTAL_DIAS_SN` y `HORASIN` **no pueden asumirse constantes a lo largo de los días de estancia en UCI**. Esto debilita la interpretación clásica del Cox. Además, en este IQ7 el evento “NPT no justificada” no es un desenlace temporal real que ocurra durante el seguimiento, sino una clasificación documental del episodio de NPT. Por eso, desde el punto de vista metodológico, **la regresión logística binaria es más adecuada como análisis principal**.
+
+### **Mortalidad a los 28 días**
+
+Se realizó un análisis de supervivencia a 28 días en la subcohorte de pacientes que recibieron NPT, estratificando la población según la existencia o ausencia de justificación documental de la indicación. Para ello, se define el evento de interés como mortalidad a 28 días a partir de `MUERTO28`, utilizando `ESTADA28` como tiempo de seguimiento. En primer lugar, se calcula la mortalidad bruta por grupo, expresada como número absoluto de muertes y porcentaje. Posteriormente, se ajustan curvas de Kaplan-Meier mediante `survfit()` y se compara la distribución de supervivencia entre ambos grupos mediante el test de log-rank. Finalmente, se representa gráficamente la supervivencia acumulada hasta el día 28, incluyendo tabla de pacientes en riesgo por intervalo temporal.
+
+```{r km mortality IQ7}
+library(dplyr); library(survival); library(survminer); library(knitr)
+
+# Tiempo: ESTADA28 | Evento: MUERTO28 | Grupos: NPT justificada / NPT no justificada
+
+# 1. Preparar base
+datos_km_iq7 <- pacientes_NPT_iq7 %>% mutate(Grupo_IQ7_KM = factor(case_when(Grupo_IQ7_NPT == "NPT justificada" ~ "NPT justificada", Grupo_IQ7_NPT == "NPT no justificada" ~ "NPT no justificada", TRUE ~ NA_character_), levels = c("NPT justificada", "NPT no justificada")), Evento_Muerte28 = case_when(MUERTO28 == 1 ~ 1, MUERTO28 == 0 ~ 0, TRUE ~ NA_real_)) %>% filter(!is.na(Grupo_IQ7_KM), !is.na(ESTADA28), !is.na(Evento_Muerte28))
+
+# 2. Comprobar n y eventos por grupo
+datos_km_iq7 %>% group_by(Grupo_IQ7_KM) %>% summarise(n = n(), muertes_28d = sum(Evento_Muerte28 == 1, na.rm = TRUE), mortalidad_28d = round(mean(Evento_Muerte28 == 1, na.rm = TRUE) * 100, 1), .groups = "drop") %>% kable(caption = "Mortalidad a 28 días según justificación documental de la NPT")
+
+# 3. Ajustar Kaplan-Meier y test de log-rank
+km_iq7 <- survfit(Surv(ESTADA28, Evento_Muerte28) ~ Grupo_IQ7_KM, data = datos_km_iq7); logrank_iq7 <- survdiff(Surv(ESTADA28, Evento_Muerte28) ~ Grupo_IQ7_KM, data = datos_km_iq7)
+p_logrank_iq7 <- 1 - pchisq(logrank_iq7$chisq, length(logrank_iq7$n) - 1); p_logrank_iq7_txt <- ifelse(p_logrank_iq7 < 0.001, "<0.001", sprintf("%.3f", p_logrank_iq7))
+
+# 4. Gráfico Kaplan-Meier según justificación documental de la NPT
+ggsurvplot(km_iq7, data = datos_km_iq7, risk.table = TRUE, pval = paste0("Log-rank p = ", p_logrank_iq7_txt), conf.int = FALSE, censor = TRUE, xlab = "Días de seguimiento", ylab = "Supervivencia acumulada", title = "Supervivencia a 28 días según justificación documental de la NPT", legend.title = "Grupo IQ7", legend.labs = c("NPT justificada", "NPT no justificada"), break.time.by = 7, xlim = c(0, 28), risk.table.height = 0.25, ggtheme = theme_minimal())
+```
+
+En el análisis descriptivo, la mortalidad a 28 días fue del **25,7%** en los pacientes con NPT justificada —38/148— y del **29,8%** en aquellos con NPT no justificada —14/47—. Aunque la mortalidad puntual fue numéricamente superior en el grupo sin justificación documental, la comparación mediante log-rank no mostró diferencias estadísticamente significativas en la supervivencia acumulada entre ambos grupos —**p = 0,514**—. Las curvas de Kaplan-Meier muestran una separación discreta a favor del grupo con NPT justificada, especialmente a partir de la segunda semana de seguimiento, pero esta diferencia no alcanza significación estadística. Desde el punto de vista inferencial, estos resultados indican que la ausencia de justificación documental de la NPT no se asoció de forma significativa con mayor mortalidad a 28 días en esta cohorte. Por tanto, el IQ7 parece comportarse fundamentalmente como un indicador de trazabilidad y calidad documental, más que como un marcador directamente asociado a supervivencia a corto plazo.
+
+### **Conclusión Indicador de Calidad 7** (**IQ7**)
+
+En conjunto, el análisis del IQ7 evidencia un **cumplimiento insuficiente del estándar de calidad** definido para el uso adecuado de nutrición parenteral total (NPT), entendido en este análisis como la existencia de una justificación documental registrada de su indicación.
+
+La distribución de los 195 pacientes que recibieron NPT se divide en:
+
+- **NPT justificada documentalmente** (**75,9%**): Grupo mayoritario (148 pacientes), con constancia registrada de indicación clínica.
+
+- **NPT no justificada documentalmente** (**24,1%**): Subgrupo (47 pacientes) que concentra el principal margen de mejora del indicador.
+
+El resultado se sitúa **por debajo del estándar establecido** (**≥90%**), por lo que existe un margen claro de mejora. No obstante, la interpretación debe ser prudente: el indicador no demuestra necesariamente que todos los casos sin registro correspondan a una indicación clínicamente inadecuada, sino que identifica una **deficiencia relevante en la trazabilidad documental** de la prescripción.
+
+**Caracterización de los grupos según justificación documental**
+
+Los pacientes con NPT justificada y no justificada presentaron un **perfil clínico basal globalmente comparable**. No se observaron diferencias significativas en edad, gravedad al ingreso ni comorbilidad, con escalas de gravedad prácticamente superponibles:
+
+- *APACHE II*: 20,4 ± 7,8 frente a 20,0 ± 8,2 (*p = 0,813*).
+
+- *SAPS II*: 49,0 ± 18,0 frente a 49,8 ± 16,4 (*p = 0,795*).
+
+- *SOFA al ingreso*: 7,0 [4,0–10,0] frente a 7,0 [4,5–9,0] (*p = 0,919*).
+
+- *NUTRIC Score*: 4,0 [3,0–6,0] frente a 5,0 [3,8–6,0] (*p = 0,288*).
+
+Las **diferencias principales** se concentraron en variables nutricionales y temporales del soporte. Los pacientes con NPT justificada presentaron:
+
+- **Mayor BMI**: 27,7 [24,0–30,8] frente a 24,7 [22,9–29,0] kg/m² (**p = 0,006**).
+
+- **Mayor duración total del soporte**: 12,0 [7,0–24,2] frente a 8,0 [5,0–12,0] días (**p = 0,003**).
+
+- **Mayor duración específica de la NPT**: 7,0 [4,0–13,0] frente a 5,0 [3,0–7,5] días (**p = 0,002**).
+
+- **Mayor estancia hospitalaria**: 34,0 [20,0–60,2] frente a 26,5 [15,0–39,0] días (**p = 0,025**).
+
+**Señales exploratorias** (**Tendencias**):
+
+- *Riesgo nutricional* (*VGS*): Más frecuente en el grupo justificado (59,2% vs. 42,6%; *p = 0,068*), sugiriendo que pacientes con peor perfil reconocido se documentan mejor.
+
+- *Infección relacionada con catéter*: Más frecuente en el grupo sin justificación (12,8% vs. 4,1%; *p = 0,069*).
+
+- *Inicio del soporte*: Tendió a ser más precoz en pacientes sin justificación (24,4 vs. 30,0 horas; *p = 0,089*).
+
+*No se observaron diferencias significativas en*: Tipo global de soporte, vía de administración de NPT, complicaciones digestivas, ventilación mecánica, noradrenalina, TRR, infecciones respiratorias ni mortalidad a 28 días.
+
+**Respaldos del modelo multivariable** (**Regresión Logística**)
+
+El modelo multivariable reforzó la interpretación de que la ausencia de justificación **no se explica por una mayor gravedad basal**, sino por un patrón de menor reconocimiento nutricional y menor duración del episodio.
+
+El modelo final (n = 185; AIC = 190,699; **AUC = 0,761**) mostró una capacidad discriminativa moderada. En el modelo ajustado, se asociaron de forma independiente a una **menor probabilidad de NPT no justificada** (mejor documentación):
+
+- **Mayor BMI**: OR 0,89; IC95% 0,81–0,97 (*p = 0,007*).
+
+- **Riesgo nutricional por VGS**: OR 0,28; IC95% 0,12–0,62 (*p = 0,002*).
+
+- **Mayor duración de la NPT**: OR 0,94; IC95% 0,89–1,00 (*p = 0,046*).
+
+*La infección relacionada con catéter* mostró una asociación positiva con la ausencia de justificación (OR 3,36; *p = 0,080*), aunque únicamente como tendencia. Las *horas hasta el inicio* (*p = 0,167*) y los *días de hospitalización* (*p = 0,554*) perdieron significación independiente.
+
+**En conjunto**: La documentación mejora en pacientes con mayor reconocimiento clínico-nutricional y en tratamientos prolongados. Los episodios más breves o menos caracterizados nutricionalmente concentran el mayor riesgo de falta de registro.
+
+**Análisis complementario de Cox**
+
+Como análisis exploratorio, se ajustó un modelo de Cox (n = 185; 46 eventos; AUC = 0,719). Los resultados fueron **globalmente concordantes** (asociaciones significativas para BMI, VGS, horas hasta inicio y días en terapia).
+
+Sin embargo, este análisis debe interpretarse con cautela. Existió una **violación global significativa** de la proporcionalidad de riesgos (*p = 6,5e-11*). Además, el evento “NPT no justificada” es una clasificación documental, no un desenlace longitudinal real. Por ello, **la regresión logística binaria constituye el análisis principal más adecuado**.
+
+**Auditoría clínica y oportunidades de mejora**
+
+El problema principal radica en la falta de registro explícito en una cuarta parte de los pacientes. Las áreas de mejora prioritarias son:
+
+1. **Reforzar la obligatoriedad** de documentar el motivo antes o en el momento de iniciar la NPT.
+
+2. **Estandarizar los motivos** en la historia clínica (contraindicación NE, intolerancia grave, reposo intestinal, cirugía digestiva, etc.).
+
+3. **Revisar los episodios de corta duración** (urgentes o transitorios), donde la indicación suele quedar "asumida" pero no verificable.
+
+4. **Incorporar campos estructurados** obligatorios en la prescripción electrónica.
+
+5. **Auditar periódicamente** para distinguir entre prescripciones clínicamente inadecuadas y simples defectos de cumplimentación.
+
+**Impacto en mortalidad y relevancia del indicador**
+
+Aunque la mortalidad a 28 días fue numéricamente superior en el grupo sin justificación (29,8% frente a 25,7%), esta diferencia **no alcanzó significación estadística** (análisis Kaplan-Meier log-rank *p = 0,514*). En esta cohorte, la falta de documentación no se asoció a una peor supervivencia a corto plazo.
+
+Sin embargo, esta ausencia de impacto en mortalidad **no resta relevancia al indicador**. El IQ7 evalúa la adecuación, seguridad y trazabilidad del proceso. Dado que la NPT es compleja y costosa, el objetivo no es demostrar un impacto directo en supervivencia, sino asegurar una **prescripción trazable, auditable y clínicamente segura**, alineada con los criterios establecidos.
+
