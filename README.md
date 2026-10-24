@@ -1,6 +1,52 @@
-# 📊 Proyecto ENPIC: Evaluación y Análisis de Indicadores de Calidad en UCI
+# ðŸ“Š Proyecto ENPIC: BioestadÃ­stica ClÃ­nica y AnÃ¡lisis de Supervivencia en Pacientes CrÃ­ticos de UCI
 
-> *Repositorio oficial para el almacenamiento, procesamiento analítico y evaluación de indicadores de calidad asistencial y nutricional en pacientes críticos a partir de la "Base de datos ENPIC".*
+[![Language-R](https://img.shields.io/badge/language-R_%E2%89%A54.0-276DC3.svg?logo=r&logoColor=white)](https://www.r-project.org/)
+[![Framework-RMarkdown](https://img.shields.io/badge/framework-R_Markdown-4285F4.svg?logo=rstudio&logoColor=white)](https://rmarkdown.rstudio.com/)
+[![Focus-Biostatistics](https://img.shields.io/badge/focus-Clinical_Biostatistics_%26_Survival_Analysis-e63946.svg)]()
+[![Domain-ICU](https://img.shields.io/badge/domain-Critical_Care_%2F_Intensive_Care-1d3557.svg)]()
+[![Status-Completed](https://img.shields.io/badge/Status-Audited_%26_Published-2a9d8f.svg)]()
+
+> **BioestadÃ­stica ClÃ­nica Aplicada & EpidemiologÃ­a Hospitalaria:**  
+> Repositorio oficial para el almacenamiento, procesamiento analÃ­tico, evaluaciÃ³n de indicadores de calidad y modelado bioestadÃ­stico avanzado (regresiÃ³n de Cox, anÃ¡lisis de supervivencia de Kaplan-Meier, curvas ROC y regresiÃ³n logÃ­stica multivariante) en una cohorte de pacientes crÃ­ticos ingresados en UCI a partir de la **Base de datos ENPIC** (*Hospital Universitario de Bellvitge / IDIBELL*).
+
+---
+
+## ðŸ”¬ Matriz de MetodologÃ­a BioestadÃ­stica y Modelado
+
+| MetodologÃ­a / AnÃ¡lisis | ImplementaciÃ³n en R | Paquetes Clave | AplicaciÃ³n ClÃ­nica en el Proyecto |
+| :--- | :--- | :--- | :--- |
+| **AnÃ¡lisis de Supervivencia a 28 dÃ­as** | survfit(Surv(time, status) ~ group) + Log-Rank | survival, survminer | ComparaciÃ³n de curvas de Kaplan-Meier segÃºn adecuaciÃ³n nutricional y nutritrauma (IQ4, IQ6, IQ11). |
+| **Modelos de Riesgos Proporcionales de Cox** | coxph(Surv(time, status) ~ ...) | survival, room | EstimaciÃ³n de Hazard Ratios (HR) ajustados por gravedad basal (APACHE II, SOFA) y comorbilidades. |
+| **DiagnÃ³stico de Proporcionalidad** | cox.zph(cox_model) (Residuos de Schoenfeld) | survival | ValidaciÃ³n formal matemÃ¡tica del supuesto de riesgos proporcionales en todos los modelos de Cox. |
+| **Modelado Multivariante y SelecciÃ³n** | SelecciÃ³n parsimoniosa por ranking AIC-AUC | 
+net, stats, purrr | RegresiÃ³n logÃ­stica binaria y multinomial (multinom()) para evaluar factores de riesgo de hipo/hiperalimentaciÃ³n. |
+| **Capacidad Discriminativa (Curvas ROC)** | oc(), uc() y cÃ¡lculo de puntos de corte | pROC | EvaluaciÃ³n de la precisiÃ³n diagnÃ³stica de las escalas de gravedad frente a desenlaces adversos. |
+| **Inferencia Exacta de Proporciones** | Test exacto de Clopper-Pearson (inom.test()) | stats | Intervalos de confianza del 95% para indicadores centinela con baja tasa de eventos (IQ1, IQ8, IQ10). |
+| **Tablas Univariantes Automatizadas** | Funciones modulares (crear_fila_*) | haven, dplyr | GeneraciÃ³n reproducible de caracterÃ­sticas basales (Mann-Whitney, t-Student, Chi-cuadrado, Fisher). |
+
+---
+
+## ðŸ—ºï¸ Flujo MetodolÃ³gico de la Cohorte y Arquitectura AnalÃ­tica
+
+``mermaid
+flowchart TD
+    A["ðŸ¥ AdmisiÃ³n del Paciente CrÃ­tico en UCI<br/>(Cohorte Global N=525)"] --> B["DiagnÃ³stico Estructural y AuditorÃ­a<br/>(escaneo_previo.Rmd - haven, SPSS, KS-test)"]
+    
+    B --> C["EvaluaciÃ³n Basal y Riesgo Nutricional<br/>(APACHE II, SOFA, SAPS II, NUTRIC Score)"]
+    
+    C --> D1["Soporte Nutricional Enteral (NE)<br/>(IQ6: Precoz vs TardÃ­o | IQ9: MonitorizaciÃ³n)"]
+    C --> D2["Soporte Nutricional Parenteral (NPT/NPC)<br/>(IQ7: JustificaciÃ³n | IQ8: Rescate NPC)"]
+    
+    D1 --> E["AdecuaciÃ³n CalÃ³rico-Proteica al DÃ­a 4 (IQ4)<br/>â€¢ Kcal/kg/dÃ­a (Meta: 20-30)<br/>â€¢ ProteÃ­na g/kg/dÃ­a (Meta: â‰¥1.3)"]
+    D2 --> E
+    
+    E --> F["AuditorÃ­a de Seguridad y Toxicidad<br/>â€¢ Nutritrauma MetabÃ³lico-OrgÃ¡nico (IQ10/IQ11)<br/>â€¢ DisfunciÃ³n HepÃ¡tica DHANP (IQ12)<br/>â€¢ Profilaxis de Ãšlcera de EstrÃ©s (IQ16)"]
+    
+    F --> G["Modelado BioestadÃ­stico e Inferencia"]
+    G --> H1["Supervivencia a 28 DÃ­as<br/>(Kaplan-Meier + Log-Rank)"]
+    G --> H2["Riesgos Proporcionales de Cox<br/>(HR ajustados + Residuos Schoenfeld)"]
+    G --> H3["RegresiÃ³n LogÃ­stica & ROC<br/>(Modelos multinomiales + SelecciÃ³n AIC-AUC)"]
+``
 
 ---
 
