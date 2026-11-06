@@ -50,7 +50,42 @@ flowchart TD
 ---
 
 
-## 📂 Estructura y Descripción de Archivos del Proyecto
+## 📂 Estructura y Arquitectura del Repositorio
+
+El repositorio se organiza de forma modular y reproducible separando el código fuente analítico, los informes renderizados y la documentación clínica de referencia:
+
+```text
+enpic/
+├── README.md                      # Documentación maestra y metodología bioestadística
+├── LICENSE                        # Licencia de código abierto MIT
+├── .gitignore                     # Exclusión de datos primarios .sav y archivos temporales
+│
+├── analysis/                      # Scripts bioestadísticos modulares (.Rmd)
+│   ├── escaneo_previo.Rmd         # Diagnóstico estructural y auditoría de datos
+│   ├── indicador1.Rmd             # Riesgo Nutricional (RN) y NUTRIC Score
+│   ├── indicador2.Rmd             # Valoración del Estado Nutricional (VSG / CONUT)
+│   ├── indicador4.Rmd             # Adecuación calórico-proteica (Kruskal, Cox, ROC)
+│   ├── indicador6.Rmd             # Nutrición enteral precoz vs tardía
+│   ├── indicador7.Rmd             # Justificación y uso adecuado de NPT
+│   ├── indicador8.Rmd             # Adecuación temporal de nutrición complementaria
+│   ├── indicador9.Rmd             # Monitorización seriada de nutrición enteral
+│   ├── indicador10.Rmd            # Monitorización preventiva de nutritrauma
+│   ├── indicador11.Rmd            # Incidencia de nutritrauma y curvas de supervivencia
+│   ├── indicador12.Rmd            # Disfunción hepática asociada a nutrición parenteral
+│   └── indicador16.Rmd            # Profilaxis farmacológica de úlcera por estrés
+│
+├── reports/                       # Informes clínicos interactivos renderizados (.html)
+│   ├── escaneo_previo.html
+│   ├── indicador1.html
+│   └── ... (informes compilados de cada indicador)
+│
+└── docs/                          # Documentación clínica y protocolos de referencia
+    └── Indicadores_de_Calidad_ENPIC.pdf # Manual de definición de indicadores SEMICYUC
+```
+
+---
+
+## 🔬 Descripción Detallada de los Scripts Analíticos (`analysis/`)
 
 El flujo de trabajo analítico y de control de calidad se encuentra modularizado en los siguientes scripts desarrollados en R Markdown, garantizando su reproducibilidad:
 
